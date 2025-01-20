@@ -1,0 +1,3 @@
+progenitor_directory: ./progenitor_models
+template_directory: ./model_template
+runs_directory: ./runs
