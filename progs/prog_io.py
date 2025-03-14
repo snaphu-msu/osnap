@@ -3,6 +3,7 @@ import subprocess
 import pandas as pd
 import ast
 from astropy import units
+import yaml
 from configparser import ConfigParser
 
 # progs
@@ -10,6 +11,10 @@ from . import quantities
 from progs.network import get_iso_group
 
 g_to_msun = units.g.to(units.M_sun)
+
+stream = open('config.yaml', 'r')
+configs = yaml.safe_load(stream)
+progenitor_directory = configs['progenitor_directory']
 
 
 # =======================================================
@@ -546,7 +551,7 @@ def progset_path(progset_name):
     ----------
     progset_name : str
     """
-    path = os.path.join(top_path(), 'progenitors', progset_name)
+    path = os.path.join(top_path(), progenitor_directory, progset_name)
     return path
 
 

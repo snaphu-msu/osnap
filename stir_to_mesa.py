@@ -11,7 +11,7 @@ np.set_printoptions(threshold=sys.maxsize)
 stream = open('config.yaml', 'r')
 configs = yaml.safe_load(stream)
 progenitor_directory = configs['progenitor_directory']
-template_directory = configs['template_directory']
+model_template = configs['model_template']
 runs_directory = configs['runs_directory']
 
 # Constants in CGS units
@@ -21,6 +21,7 @@ sigma_b = 5.669E-5 # Stefan-Boltzmann constant
 
 # Other constants
 pns_boundary_energy = 2e18 # Energy at which the PNS boundary is defined
+# TODO: This is pretty close to the number used in energy calculatations below...
 
 
 
@@ -168,27 +169,17 @@ class Star():
         prog_total_specific_energy = prog_data['ener'].values - 1.275452534480232E+018 + prog_data['gpot'].values
 
         # Stitches the progenitor data onto the STIR ouput
-        self.enclosed_mass = stitch_regions(self.enclosed_mass, prog_enclosed_mass, stitch_index, smoothing = 0, xlog = False, xlabel = "Cell Index", ylabel = "log(mass)")
-        self.radius = stitch_regions(self.radius, prog_data['r'].values, stitch_index, smoothing = 0, xlog = False, xlabel = "Cell Index", ylabel = "log(mass)")
-        self.mass_density = stitch_regions(stir_data['density'].values, prog_data['density'].values, stitch_index, xaxis = self.enclosed_mass, xlabel = "log(mass)", ylabel = "log(mass density)")
-        self.pressure = stitch_regions(stir_data['pressure'].values, prog_data['pressure'].values, stitch_index, xaxis = self.enclosed_mass, xlabel = "log(mass)", ylabel = "log(pressure)")
-        self.temp = stitch_regions(stir_data['temp'].values, prog_data['temp'].values, stitch_index, xaxis = self.enclosed_mass, xlabel = "log(mass)", ylabel = "log(temp)")
-        self.radial_velocity = stitch_regions(self.radial_velocity, prog_data['velx'].values, stitch_index, xlog = False, ylog = False, xaxis = self.enclosed_mass, xlabel = "log(mass)", ylabel = "radial velocity")
+        self.enclosed_mass = stitch_regions(self.enclosed_mass, prog_enclosed_mass, stitch_index, smoothing = 0, xlog = False, xlabel = "Cell Index", ylabel = "log(enclosed mass)")
+        self.radius = stitch_regions(self.radius, prog_data['r'].values, stitch_index, smoothing = 0, xlog = False, xlabel = "Cell Index", ylabel = "log(radius)")
+        self.mass_density = stitch_regions(stir_data['density'].values, prog_data['density'].values, stitch_index, xaxis = self.enclosed_mass, xlabel = "log(enclosed mass)", ylabel = "log(mass density)")
+        self.pressure = stitch_regions(stir_data['pressure'].values, prog_data['pressure'].values, stitch_index, xaxis = self.enclosed_mass, xlabel = "log(enclosed mass)", ylabel = "log(pressure)")
+        self.temp = stitch_regions(stir_data['temp'].values, prog_data['temp'].values, stitch_index, xaxis = self.enclosed_mass, xlabel = "log(enclosed mass)", ylabel = "log(temp)")
+        self.radial_velocity = stitch_regions(self.radial_velocity, prog_data['velx'].values, stitch_index, xlog = False, ylog = False, xaxis = self.enclosed_mass, xlabel = "log(enclosed mass)", ylabel = "radial velocity")
         self.volume  = np.concat((stir_data['cell_volume'].values, prog_volume))
         #self.total_specific_energy = stitch_regions(self.total_specific_energy, prog_total_specific_energy, stitch_index, ylog = False, xaxis = self.enclosed_mass, xlabel = "log(mass)", ylabel = "total specific energy")
 
         # Calculating the total energy of each cell in the star
         #self.total_energy = (stir_data['ener'] - 1.275452534480232E+018 + stir_data['gpot']) * stir_data['density'].v  * stir_data['cell_volume']
-    
-        # Determining the mass cut for the proto-neutron star
-        '''TODO:
-        * Integrate the specific total energy from that point to the last cell (including progenitor). THis is the overburden energy.
-        * Go back to the initial PNS index and integrate the specific total energy with a changing mass until the sum is equal to the overburden energy.
-        * The index at that point is where the PNS star should stop.
-        '''
-        #bound_index = np.min(np.where(self.total_energy > 10 ** 20))
-        #self.pns_masscut = np.sum(self.mass_density[:bound_index]  * self.volume[:bound_index])
-        #print(self.pns_masscut)
 
         # DEBUG: Plot the total specific energy with respect to log(radius) to find what a "small amount of energy" might be
         plt.plot(np.log10(self.radius[:len(stir_data['density'].values)]), self.total_specific_energy)
@@ -199,8 +190,13 @@ class Star():
         # Estimate the PNS boundary as the point where the total specific energy is first above some small energy (such as 2e18)
         pns_index = np.min(np.where(self.total_specific_energy < pns_boundary_energy))
 
-        # Find the overburden energy as all energy past the estimated PNS boundary
+        # Calculate the overburden energy as the total energy of all cells past the estimated PNS boundary
+        # TODO: This needs to include the progenitor domain as well but we need to calcualte gpot to get total specific energy for the progenitors
         overburden_energy = np.sum(self.total_specific_energy[pns_index:])
+
+        # Go back to the initial PNS index and integrate the specific total energy with a changing mass until the sum is equal to the overburden energy.
+        # The index at that point is where the PNS star should stop.
+        
         self.pns_masscut = np.sum(self.mass_density[:pns_index] * self.volume[:pns_index])
         
         # Structuring the data for each writing of MESA model files
