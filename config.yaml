@@ -1,3 +1,4 @@
 progenitor_directory: ./progenitors
 model_template: ./model_template
 runs_directory: ./models
+minimal_energy: 2e18 # Energy at which PNS boundary is defined
