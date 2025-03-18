@@ -14,6 +14,8 @@ progenitor_directory = configs['progenitor_directory']
 model_template = configs['model_template']
 runs_directory = configs['runs_directory']
 pns_boundary_energy = configs['minimal_energy']
+cell_edge_velocity = configs['cell_edge_velocity']
+velocity_col_name = "v" if cell_edge_velocity else "u"
 
 # Constants in CGS units
 M_sun = 1.989E33 # Mass of the sun in grams
@@ -44,8 +46,6 @@ def shift_to_cell_edge(data):
 
 
 
-
-# TODO: MESA says it uses edge velocity, but MESA model files need cell-center riemann velocities?
 class Star():
     def __init__(self, stir_data, prog_data):
         '''Combines STIR output (checkpoint) data and progenitor data to allow exporting as MESA output..'''
@@ -53,6 +53,9 @@ class Star():
         # Finds the first index in the progenitor data that is outside the STIR domain
         prog_domain = len(prog_data.loc[prog_data['enclosed_mass'].values > np.max(stir_data['enclosed_mass'].values)])
         self.stitch_index = prog_data.shape[0] - prog_domain
+
+        if prog_domain == 0:
+            print("Progenitor data is entirely within STIR domain. No stitching necessary.")
 
         # Combines STIR and progenitor data, interpolating STIR values based by enclosed mass
         self.data = prog_data.copy()
@@ -87,7 +90,7 @@ class Star():
         self.plot_data(self.data['cell_volume'], xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass (M_sun)", ylabel = "volume")
         self.plot_data(self.total_specific_energy, xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass (M_sun)", ylabel = "total specific energy")
         self.plot_data(self.total_energy, xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass (M_sun)", ylabel = "total energy")
-        self.plot_data(self.data['velx'], xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass", ylabel = "radial velocity")
+        self.plot_data(self.data[velocity_col_name], xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass", ylabel = "radial velocity")
 
         # DEBUG: Plot the total specific energy with respect to log(radius) to find what a "small amount of energy" might be
         #plt.plot(np.log10(self.radius[:len(stir_data['density'].values)]), self.total_specific_energy)
@@ -106,7 +109,6 @@ class Star():
         # TODO: The second line here shouldn't be necessary once the kepler progenitor and STIR have these values calculated.
         self.data = self.data.assign(lnR = np.log(self.data['r'].values), lnd = np.log(self.data['density'].values), lnT = np.log(self.data['temp'].values))
         self.data = self.data.assign(L = np.zeros(self.data.shape[0]), dq = np.zeros(self.data.shape[0]), u = np.zeros(self.data.shape[0]), mlt_vc = np.zeros(self.data.shape[0]))
-
 
     
     def plot_data(self, data, xaxis = None, xlabel = "", ylabel = "", xlog = False, ylog = False, zoom_width = 80):
@@ -134,6 +136,8 @@ class Star():
         # If no x-axis was specified, use the cell index
         if xaxis is None: xaxis = np.arange(len(data))
         used_xaxis = (np.log10(xaxis) if xlog else xaxis)
+        stitch_left = used_xaxis[self.stitch_index - 1]
+        stitch_right = used_xaxis[min(self.stitch_index, len(used_xaxis) - 1)]
 
         # Plot the entire curve of stitched data
         fig, axs = plt.subplots(1, 2, figsize=(10, 5))
@@ -142,11 +146,13 @@ class Star():
         axs[0].set_xlabel(xlabel)
         axs[0].set_ylabel(ylabel)
         axs[0].set_title(f"Full Star")
-        axs[0].axvline(used_xaxis[self.stitch_index], ls="--", c="red", alpha=0.3)
+        axs[0].axvspan(stitch_left, stitch_right, color="red", alpha=0.3)
 
         # Plot again but zoomed in on the stitch region
-        axs[1].plot(used_xaxis[self.stitch_index - zoom_width//2:self.stitch_index + zoom_width//2], plot_data[self.stitch_index - zoom_width//2:self.stitch_index + zoom_width//2])
-        axs[1].axvline(used_xaxis[self.stitch_index], ls="--", c="red", alpha=0.3)
+        zoom_left = max(0, self.stitch_index - zoom_width//2)
+        zoom_right = min(len(data), self.stitch_index + zoom_width//2)
+        axs[1].plot(used_xaxis[zoom_left : zoom_right], plot_data[zoom_left : zoom_right])
+        axs[1].axvspan(stitch_left, stitch_right, color="red", alpha=0.3)
         axs[1].set_title(f"Stitch Region")
         
         plt.show()
@@ -169,10 +175,10 @@ class Star():
         # TODO: UNIMPLEMENTED, possibly unnecessary
         star_age = 6.3376175628057906E-09
         initial_z = 2.0000000000000000E-02
-        R_center = 3.9992663820663236E+07 # Look to flash_to_snec code
+        core_mass = 3.0136524023699760E+33 # TODO: PNS Mass Cut
+        R_center = 3.9992663820663236E+07 # TODO: Radius of PNS mass cut
+        xmstar = total_mass * M_sun - core_mass # Mass of star minus PNS mass cut
         Teff = 7.2257665281116360E+03 # Use the stefan-boltzmann law after luminosity is calculated
-        xmstar = 2.0363416138072876E+34 # How do I calcualte this?
-        core_mass = 3.0136524023699760E+33 # Same method as R_center
 
         file_header = f"""! note: initial lines of file can contain comments
 !
@@ -204,9 +210,9 @@ class Star():
 
         # Data that will be written in table form in the stir_output.mod file
         # Also reverses the order of rows in the table so that the first cell is the outer radius and last cell is the center
-        mesa_columns = ['lnd', 'lnT', 'lnR', 'L', 'dq', 'u', 'mlt_vc', 'neut', 'h1', 'prot', 'he3', 'he4', 'c12', 'n14', 'o16', 'ne20', 
-                        'mg24', 'si28', 's32', 'ar36', 'ca40', 'ti44', 'cr48', 'cr60', 'fe52', 'fe54', 'fe56', 'co56', 'ni56', ]
-        mesa_input = self.data[mesa_columns].iloc[::-1]
+        mesa_columns = np.concat((['lnd', 'lnT', 'lnR', 'L', 'dq', velocity_col_name, 'mlt_vc'], nuclear_network))
+        if cell_edge_velocity: mesa_columns[5] = "v"
+        mesa_input = self.data[mesa_columns].iloc[::-1].reset_index(drop=True)
 
         # Add one line for each cell, consisting of all it's properties
         new_lines = []
@@ -271,47 +277,40 @@ def read_mesa_progenitor(path):
     """
     
     with open(path, "r") as file:
-
-        # Find the start of the table data
         lines = file.readlines()
-        for i, line in enumerate(lines):
-            if "lnd" in line and "lnT" in line and "model for mesa/star" not in line:
-                table_start = i
-                break
-        
-        # Find the end of the table data
-        for i, line in enumerate(lines[table_start + 1:]):
-            if line == "\n":
-                table_end = table_start + i + 1
-                break
-            
-            # Makes each line of table data easier to parse
-            lines[table_start + i + 1] = line.replace("    ", ",").replace(" ", "").replace("\n", "").replace("D", "e")
-            if lines[table_start + i + 1][0] == ",": lines[table_start + i + 1] = lines[table_start + i + 1][1:]
 
-        # Process the numerical data into a pandas dataframe
-        numerical_data = lines[table_start + 1:table_end]
-        structured_data = [list(map(float, line.split(",")[1:])) for line in numerical_data]
-        column_headers = ['density', 'temp', 'r', 'L', 'dq', 'u', 'mlt_vc', 'neut', 'h1', 'prot', 
-                          'he3', 'he4', 'c12', 'n14', 'o16', 'ne20', 'mg24', 'si28', 's32', 'ar36', 
-                          'ca40', 'ti44', 'cr48', 'cr60', 'fe52', 'fe54', 'fe56', 'co56', 'ni56']
-        prog_data = pd.DataFrame(structured_data, columns=column_headers)
+        # Find the columns that contain the necessary data
+        # WARNING: There is a small chance of conv_vel not being exactly mlt_vc depending on the time step.
+        needed_columns = np.concat((['mass', 'logRho', 'temperature', 'radius_cm', 'luminosity', 'logdq', 'velocity', 'conv_vel', 'energy', 'pressure'], nuclear_network))
+        input_column_names = lines[5].split()
+        column_indices = [input_column_names.index(col) for col in needed_columns if col in input_column_names]
 
-        # Convert the ln values for easier stitching with STIR output later
-        prog_data["density"] = np.e ** prog_data['density']
-        prog_data["temp"] = np.e ** prog_data['temp']
-        prog_data["r"] = np.e ** prog_data['r']
+        # Process the numerical data into a 2D array
+        structured_data = [list(map(float, np.array(line.split())[column_indices])) for line in lines[6:]]
 
-        # Calculates the progenitor volume, enclosed mass, gravitational potential TODO: and total specific energy
+        # If any columns are missing from the progenitor, fill them with a very small number. Generally only occurs with composition.
+        for i, col in enumerate(needed_columns):
+            if col not in input_column_names:
+                print(f"Column {col} missing from progenitor data. Filling with very small number for all cells.")
+                for j in range(len(structured_data)): 
+                    structured_data[j].insert(i, 1e-99)
+
+        # Read the numerical data into a pandas dataframe, renaming columns for compatibility and ease of use
+        output_column_names = np.concat((['enclosed_mass', 'density', 'temp', 'r', 'L', 'dq', velocity_col_name, 'mlt_vc', 'ener', 'pressure'], nuclear_network))
+        prog_data = pd.DataFrame(structured_data, columns=output_column_names).iloc[::-1].reset_index(drop=True)
+
+        # Convert data to the correct scale for compatibility with STIR output
+        prog_data["density"] = (10 ** prog_data['density'])
+        prog_data["dq"] = 10 ** prog_data['dq']
+
+        # Calculates the progenitor volume and gravitational potential
         prog_volume = (4/3) * np.pi * np.diff(np.concatenate(([0], prog_data['r'].values**3)))
         prog_data = prog_data.assign(cell_volume = prog_volume) 
-        prog_data = prog_data.assign(enclosed_mass = np.cumsum(prog_data['cell_volume'].values * prog_data['density'].values) / M_sun)
         prog_data = prog_data.assign(gpot = -G * prog_data['enclosed_mass'].values / prog_data['r'].values)
-        # prog_data = prog_data.assign(ener = )
 
-        # STIR uses ascending order with radius, while MESA uses descending order
-        # So, this returns the MESA ouput but in ascending order to match STIR
-        return prog_data.iloc[::-1]  
+        print(np.sum(prog_data['dq'].values))
+
+        return prog_data
 
 
 
@@ -323,8 +322,14 @@ def read_stir_checkpoint(path):
                  ("flash", "cell_volume"), ("flash", "ener"), ("flash", "gpot")]
     stir_dataframe = stir_data.to_dataframe(grab_data)
     stir_dataframe['r'] = shift_to_cell_edge(stir_dataframe['r'].values) # Shifts radius to the cell edge to match progenitor outputs
-    stir_dataframe['velx'] = shift_to_cell_edge(stir_dataframe['velx'].values) # Shifts radial velocity to the cell edge to match progenitor outputs
     stir_dataframe = stir_dataframe.assign(enclosed_mass = np.cumsum(stir_dataframe['cell_volume'].values * stir_dataframe['density'].values) / M_sun)
+
+    # Rename the velocity column to match MESA output
+    stir_dataframe.rename(columns={"velx": velocity_col_name}, inplace=True)
+
+    # If using cell edge velocity, shift the STIR velocities to the cell edge
+    if cell_edge_velocity: 
+        stir_dataframe[velocity_col_name] = shift_to_cell_edge(stir_dataframe[velocity_col_name].values) # Shifts radial velocity to the cell edge to match progenitor outputs
 
     # Add nuclear network with all zeros for mass fractions
     for col in nuclear_network:
