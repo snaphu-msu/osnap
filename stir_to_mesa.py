@@ -92,18 +92,11 @@ class Star():
         self.plot_data(self.total_energy, xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass (M_sun)", ylabel = "total energy")
         self.plot_data(self.data[velocity_col_name], xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass", ylabel = "radial velocity")
 
-        # DEBUG: Plot the total specific energy with respect to log(radius) to find what a "small amount of energy" might be
-        #plt.plot(np.log10(self.radius[:len(stir_data['density'].values)]), self.total_specific_energy)
-        #plt.axhline(0, ls = "--", c = "red")
-        #plt.axhline(pns_boundary_energy, ls = "--", c = "green")
-        #plt.ylim(-0.05e20, 0.15e20)
-        # Estimate the PNS boundary as the point where the total specific energy is first above some small energy (such as 2e18)
-        #pns_index = np.min(np.where(self.total_specific_energy < pns_boundary_energy))
-        # Calculate the overburden energy as the total energy of all cells past the estimated PNS boundary
-        #overburden_energy = np.sum(self.total_specific_energy[pns_index:])
-        # TODO: Go back to the initial PNS index and integrate the specific total energy with a changing mass until the sum is equal to the overburden energy. The index at that point is where the PNS star should stop.
-        # Get the total mass of the proto-neutron star
-        #self.pns_masscut = np.sum(self.mass_density[:pns_index] * self.volume[:pns_index])
+        self.total_mass = np.sum(self.data['density'] * self.data['cell_volume'])
+
+        # Calculate the PNS mass cut using radial velocity
+        masscut_index = np.min(np.where(self.total_specific_energy >= 0))
+        self.pns_masscut = self.data['enclosed_mass'].values[masscut_index]
 
         # Prepares the data for MESA output by adding missing columns
         # TODO: The second line here shouldn't be necessary once the kepler progenitor and STIR have these values calculated.
@@ -166,34 +159,32 @@ class Star():
         def format_number(number):
             return f"{number:.16e}".replace('e', 'D')
         
-        # IMPLEMENTED
         n_shells = ' ' * (25 - int(np.floor(np.log10(self.data.shape[0])))) + str(self.data.shape[0])
-        total_mass = np.sum(self.data['density'] * self.data['cell_volume']) / M_sun # In units of solar mass
-        total_energy = 0#np.sum(self.total_energy) 
+        total_energy = np.sum(self.total_energy) 
         model_number = ' ' * (25 - int(np.floor(np.log10(model_index)))) + str(model_index)
-
-        # TODO: UNIMPLEMENTED, possibly unnecessary
-        star_age = 6.3376175628057906E-09
-        initial_z = 2.0000000000000000E-02
-        core_mass = 3.0136524023699760E+33 # TODO: PNS Mass Cut
+        star_age = 6.3376175628057906E-09 # TODO: Do we need this?
+        initial_z = 2.0000000000000000E-02 # TODO: Do we need this?
         R_center = 3.9992663820663236E+07 # TODO: Radius of PNS mass cut
-        xmstar = total_mass * M_sun - core_mass # Mass of star minus PNS mass cut
-        Teff = 7.2257665281116360E+03 # Use the stefan-boltzmann law after luminosity is calculated
+        xmstar = self.total_mass - self.pns_masscut # Mass of star minus PNS mass cut
+        avg_core_density = self.pns_masscut / (4/3 * np.pi * R_center**3) 
+        Teff = 7.2257665281116360E+03 # TODO: Use the stefan-boltzmann law after luminosity is calculated
 
+        # TODO: Verify none of the values that are zeroed out below aren't necessary
+        # TODO: May need to specify things like version number, nuclear network name, species count, etc either from progenitor or from config file
         file_header = f"""! note: initial lines of file can contain comments
 !
            548 -- model for mesa/star, cell center Riemann velocities (u), mlt convection velocity (mlt_vc). cgs units. lnd=ln(density), lnT=ln(temperature), lnR=ln(radius), L=luminosity, dq=fraction of xmstar=(mstar-mcenter) in cell; remaining cols are mass fractions.
 
                   version_number   'r24.08.1'
-                          M/Msun      {format_number(total_mass)}
+                          M/Msun      {format_number(self.total_mass / M_sun )}
                     model_number      {model_number}
                         star_age      {format_number(star_age)}
                        initial_z      {format_number(initial_z)}
                         n_shells      {n_shells}
                         net_name   'approx21_cr60_plus_co56.net'
                          species                              22
-                          xmstar      {format_number(xmstar)}  ! above core (g).  core mass: Msun, grams:      {format_number(core_mass / M_sun)}    {format_number(core_mass)}
-                        R_center      {format_number(R_center)}  ! radius of core (cm).  R/Rsun, avg core density (g/cm^3):      {format_number(R_center / R_sun)}    1.1247695543683205D+10
+                          xmstar      {format_number(xmstar)}  ! above core (g).  core mass: Msun, grams:      {format_number(self.pns_masscut / M_sun)}    {format_number(self.pns_masscut)}
+                        R_center      {format_number(R_center)}  ! radius of core (cm).  R/Rsun, avg core density (g/cm^3):      {format_number(R_center / R_sun)}    {format_number(avg_core_density)}
                             Teff      {format_number(Teff)}
                   power_nuc_burn      0.0000000000000000D+00
                     power_h_burn      0.0000000000000000D+00
@@ -201,11 +192,11 @@ class Star():
                     power_z_burn      0.0000000000000000D+00
                      power_photo      0.0000000000000000D+00
                     total_energy      {format_number(total_energy)}
-         cumulative_energy_error      1.3995525796409981D+42
-   cumulative_error/total_energy      1.7494407245495471D-09  log_rel_run_E_err     -8.7571007679208037D+00
+         cumulative_energy_error      0.0000000000000000D+00
+   cumulative_error/total_energy      0.0000000000000000D+00  log_rel_run_E_err      0.0000000000000000D+00
                      num_retries                               0
 
-                lnd                        lnT                        lnR                          L                         dq                          u                     mlt_vc                   neut                       h1                         prot                       he3                        he4                        c12                        n14                        o16                        ne20                       mg24                       si28                       s32                        ar36                       ca40                       ti44                       cr48                       cr60                       fe52                       fe54                       fe56                       co56                       ni56     
+                lnd                        lnT                        lnR                          L                         dq                          {velocity_col_name}                     mlt_vc                   neut                       h1                         prot                       he3                        he4                        c12                        n14                        o16                        ne20                       mg24                       si28                       s32                        ar36                       ca40                       ti44                       cr48                       cr60                       fe52                       fe54                       fe56                       co56                       ni56     
 """
 
         # Data that will be written in table form in the stir_output.mod file
@@ -230,6 +221,7 @@ class Star():
             new_lines.append(new_line)
 
         # Footer containing info about the previous model
+        # TODO: Currently these values are fake. Do we need to set them? Should n_shells be the number of shells in the progenitor?
         file_footer = f"""
         
         previous model
@@ -281,7 +273,8 @@ def read_mesa_progenitor(path):
 
         # Find the columns that contain the necessary data
         # WARNING: There is a small chance of conv_vel not being exactly mlt_vc depending on the time step.
-        needed_columns = np.concat((['mass', 'logRho', 'temperature', 'radius_cm', 'luminosity', 'logdq', 'velocity', 'conv_vel', 'energy', 'pressure'], nuclear_network))
+        needed_columns = np.concat((['mass', 'logRho', 'temperature', 'radius_cm', 'luminosity', 
+                                     'logdq', 'velocity', 'conv_vel', 'energy', 'pressure'], nuclear_network))
         input_column_names = lines[5].split()
         column_indices = [input_column_names.index(col) for col in needed_columns if col in input_column_names]
 
@@ -296,7 +289,8 @@ def read_mesa_progenitor(path):
                     structured_data[j].insert(i, 1e-99)
 
         # Read the numerical data into a pandas dataframe, renaming columns for compatibility and ease of use
-        output_column_names = np.concat((['enclosed_mass', 'density', 'temp', 'r', 'L', 'dq', velocity_col_name, 'mlt_vc', 'ener', 'pressure'], nuclear_network))
+        output_column_names = np.concat((['enclosed_mass', 'density', 'temp', 'r', 'L', 'dq', velocity_col_name, 
+                                          'mlt_vc', 'ener', 'pressure'], nuclear_network))
         prog_data = pd.DataFrame(structured_data, columns=output_column_names).iloc[::-1].reset_index(drop=True)
 
         # Convert data to the correct scale for compatibility with STIR output
