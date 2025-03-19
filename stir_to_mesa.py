@@ -18,6 +18,7 @@ runs_directory = configs['runs_directory']
 pns_boundary_energy = configs['minimal_energy']
 cell_edge_velocity = configs['cell_edge_velocity']
 velocity_col_name = "v" if cell_edge_velocity else "u"
+eos_file_path = configs['eos_file_path']
 
 # Constants in CGS units
 M_sun = 1.989E33 # Mass of the sun in grams
@@ -327,7 +328,7 @@ def read_stir_output(path):
     '''Reads in data from a STIR checkpoint (or plot) file, making modifications and returning it as a dataframe.'''
 
     # Load the equation of state used by STIR
-    EOS = h5py.File("SFHo.h5",'r')
+    EOS = h5py.File(eos_file_path,'r')
     mif_logenergy = rgi((EOS['ye'], EOS['logtemp'], EOS['logrho']), EOS['logenergy'][:,:,:], bounds_error=False)
     
     # Load the STIR checking/plot data into a dataframe
