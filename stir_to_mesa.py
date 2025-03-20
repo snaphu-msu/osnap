@@ -106,8 +106,11 @@ class Star():
         # Prepares the data for MESA output by adding missing columns
         # TODO: The second line here shouldn't be necessary once the kepler progenitor and STIR have these values calculated.
         self.data = self.data.assign(lnR = np.log(self.data['r'].values), lnd = np.log(self.data['density'].values), lnT = np.log(self.data['temp'].values))
-        self.data = self.data.assign(L = np.zeros(self.data.shape[0]), mlt_vc = np.zeros(self.data.shape[0]))
-    
+        self.data = self.data.assign(mlt_vc = np.zeros(self.data.shape[0]))
+        
+        # MESA needs the surface luminosity which is the same as in progenitor, but all other values should just be a copy of that value
+        self.data = self.data.assign(L = np.ones(self.data.shape[0]) * prog_data["L"].values[-1])
+
         self.prog_data = prog
 
     def plot_data(self, data, xaxis = None, xlabel = "", ylabel = "", xlog = False, ylog = False, zoom_width = 80):
