@@ -50,16 +50,17 @@ def shift_to_cell_edge(data):
 
 
 class Star():
+    
     def __init__(self, stir_output, prog):
         '''Combines STIR output (checkpoint/plot) data and progenitor data to allow exporting as MESA output..'''
 
         # Finds the first index in the progenitor data that is outside the STIR domain
         prog_data = prog['data']
-        self.stir_domain_end = stir_output.shape[0]
-        prog_domain = len(prog_data.loc[prog_data['enclosed_mass'].values > np.max(stir_output['enclosed_mass'].values)])
+        self.stir_domain_end = np.argmax(stir_output["r"].values[stir_output["r"].values <= np.max(stir_output["r"].values) * 0.85])
+        prog_domain = len(prog_data.loc[prog_data['enclosed_mass'].values > np.max(stir_output['enclosed_mass'].values[:self.stir_domain_end])])
 
         # Combines STIR and progenitor data, interpolating progenitor values based by enclosed mass
-        self.data = pd.DataFrame(index = pd.RangeIndex(stir_output.shape[0] + prog_domain), columns = stir_output.columns, dtype=float)
+        self.data = pd.DataFrame(index = pd.RangeIndex(self.stir_domain_end + prog_domain), columns = stir_output.columns, dtype=float)
         for col in stir_output.columns:
             
             # If the column doesn't exist in progenitor data, notify us and skip it
@@ -68,8 +69,8 @@ class Star():
                 continue
             
             # Fill in data for each domain
-            self.data[col].values[:stir_output.shape[0]] = stir_output[col]
-            self.data[col].values[stir_output.shape[0]:] = prog_data[col].values[-prog_domain:]
+            self.data[col].values[:self.stir_domain_end] = stir_output[col].values[:self.stir_domain_end]
+            self.data[col].values[self.stir_domain_end:] = prog_data[col].values[-prog_domain:]
 
         # Calculate the total specific energy and total energy of each cell, including gravitational potential
         self.total_specific_energy = self.data['ener'].values + self.data['gpot'].values
@@ -96,6 +97,17 @@ class Star():
         self.plot_data(self.data['cell_volume'], xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass (M_sun)", ylabel = "volume")
         self.plot_data(self.total_specific_energy, xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass (M_sun)", ylabel = "total specific energy")
         self.plot_data(self.data[velocity_col_name], xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass", ylabel = "radial velocity")
+        self.plot_data(self.data['o16'], xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass (M_sun)", ylabel = "o16")
+        self.plot_data(self.data['he4'], xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass (M_sun)", ylabel = "he4")
+        self.plot_data(self.data['neut'], xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass (M_sun)", ylabel = "neut")
+        self.plot_data(self.data['s32'], xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass (M_sun)", ylabel = "s32")
+        self.plot_data(self.data['ni56'], xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass (M_sun)", ylabel = "s32")
+
+
+        mass_fraction_sums = []
+        for i in range(self.data.shape[0]):
+            mass_fraction_sums.append(self.data.loc[i, nuclear_network].sum())
+        self.plot_data(mass_fraction_sums, xaxis = self.data['enclosed_mass'].values, xlabel = "enclosed mass (M_sun)", ylabel = "mass fractions")
 
         # Excise the PNS from the data
         self.data = self.data.drop(np.arange(self.pns_masscut_index + 1))
@@ -162,7 +174,7 @@ class Star():
 
 
 
-    def write_mesa_model(self):
+    def write_mesa_model(self, output_path):
         '''Writes the star's data into MESA input files.''' 
         
         # Easy way to convert values into the correct format for MESA model files
@@ -231,9 +243,9 @@ class Star():
                dt_next (seconds)      {format_float(self.prog_data["dt_next"])}"""
 
         # Write all of the above to the stir_output.mod file
-        with open(f'stir_output.mod', 'w') as file:
+        with open(f'{output_path}', 'w') as file:
             file.writelines(file_header + '\n'.join(new_lines) + file_footer)
-            print(f"Successfully created/updated 'stir_output.mod'")
+            print(f"Successfully created/updated '{output_path}'")
 
 
 
@@ -329,25 +341,34 @@ def read_mesa_progenitor(profile_path, model_path):
 
 def read_stir_output(path):
     '''Reads in data from a STIR checkpoint (or plot) file, making modifications and returning it as a dataframe.'''
-
-    # Load the equation of state used by STIR
-    EOS = h5py.File(eos_file_path,'r')
-    mif_logenergy = rgi((EOS['ye'], EOS['logtemp'], EOS['logrho']), EOS['logenergy'][:,:,:], bounds_error=False)
     
     # Load the STIR checking/plot data into a dataframe
     stir_data = yt.load(path).all_data()
     grab_data = [("gas", "density"), ("flash", "temp"), ("gas", "r"), ("flash", "velx"), ("gas", "pressure"),# ("flash", "ye  "),
                  ("flash", "cell_volume"), ("flash", "ener"), ("flash", "gpot")]
+    for nuc in nuclear_network: grab_data.append((nuc))
     stir_dataframe = stir_data.to_dataframe(grab_data)
     
-    # Shift radius to cell edge for compatibility with MESA radii
-    stir_dataframe['r'] = shift_to_cell_edge(stir_dataframe['r'].values) # Shifts radius to the cell edge to match progenitor outputs
+    # Renormalize the composition mass fractions since they need to sum to exactly 1
+    for i in range(stir_dataframe.shape[0]):
+        mass_fraction_sum = stir_dataframe.loc[i, nuclear_network].sum()
+        stir_dataframe.loc[i, nuclear_network] /= mass_fraction_sum
+
+    # To better match MESA outputs, shift radius to cell edge and rename velocity
+    stir_dataframe['r'] = shift_to_cell_edge(stir_dataframe['r'].values) 
+    stir_dataframe.rename(columns={"velx": velocity_col_name}, inplace=True)
+
+    # If using cell edge velocity, shift the STIR velocities to the cell edge as well
+    if cell_edge_velocity: 
+        stir_dataframe[velocity_col_name] = shift_to_cell_edge(stir_dataframe[velocity_col_name].values)
     
     # Calculate the enclosed mass for every zone
-    stir_dataframe = stir_dataframe.assign(enclosed_mass = np.cumsum(stir_dataframe['cell_volume'].values * stir_dataframe['density'].values) / M_sun)
+    enclosed_mass = np.cumsum(stir_dataframe['cell_volume'].values * stir_dataframe['density'].values) / M_sun
+    stir_dataframe = stir_dataframe.assign(enclosed_mass = enclosed_mass)
 
-    # Rename the velocity column to match MESA output
-    stir_dataframe.rename(columns={"velx": velocity_col_name}, inplace=True)
+    # Load the equation of state used by STIR
+    EOS = h5py.File(eos_file_path,'r')
+    mif_logenergy = rgi((EOS['ye'], EOS['logtemp'], EOS['logrho']), EOS['logenergy'][:,:,:], bounds_error=False)
 
     # Use the STIR EOS to calculate the total specific energy
     lye = stir_data['ye  ']
@@ -357,13 +378,5 @@ def read_stir_output(path):
     llogtemp = llogtemp * 0.0 - 2.0
     energy0 = 10.0 ** mif_logenergy(np.array([lye, llogtemp, llogrho]).T)
     stir_dataframe["ener"] = (0.5 * stir_data['velx'] ** 2 + (energy - energy0) * yt.units.erg / yt.units.g).v
-
-    # If using cell edge velocity, shift the STIR velocities to the cell edge
-    if cell_edge_velocity: 
-        stir_dataframe[velocity_col_name] = shift_to_cell_edge(stir_dataframe[velocity_col_name].values)
-
-    # Add nuclear network with all zeros for mass fractions
-    for col in nuclear_network:
-        stir_dataframe[col] = np.zeros_like(stir_dataframe.shape[0])
 
     return stir_dataframe
