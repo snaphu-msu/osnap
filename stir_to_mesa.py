@@ -25,14 +25,11 @@ R_sun = 6.959E10 # Radius of the sun in centimeters
 sigma_b = 5.669E-5 # Stefan-Boltzmann constant
 G = 6.67430E-8 # Gravitational constant
 
-nuclear_network = ['neut', 'h1', 'prot', 'he3', 'he4', 'c12', 'n14', 'o16', 'ne20', 'mg24', 'si28', 
-                   's32', 'ar36', 'ca40', 'ti44', 'cr48', 'cr60', 'fe52', 'fe54', 'fe56', 'co56', 'ni56']
-
 default_plotted_profiles = ['enclosed_mass', 'r', 'density', 'temp', velocity_col_name, 'total_specific_energy', 'pressure']
 log_plots = ["enclosed_mass", "r", "density", "pressure", "temp"]
 
     
-def convert(model_name, stir_alpha, plotted_profiles = ["DEFAULT"]):
+def convert(model_name, stir_alpha, stir_portion = 0.8, plotted_profiles = ["DEFAULT"]):
     """
     Loads in a MESA progenitor and STIR profiles, making various modifications to make 
     them compatible, then creates a MESA-readable .mod file.
@@ -42,29 +39,32 @@ def convert(model_name, stir_alpha, plotted_profiles = ["DEFAULT"]):
             The name of the model (what comes before .mod or .data in the MESA progenitors).
         stir_alpha (float) : 
             The alpha value used for the STIR simulations.
+        stir_portion (float) :
+            What fraction of the STIR domain to include. A value of 0.8 will use progenitor data for the last 20% of the STIR domain.
         plotted_profiles (numpy array (str)) : 
-            The names of each profile/variable you want to see plotted. Default of ["DEFAULT"] will plot enclosed mass, radius, density, temperature, velocity, total specific energy, and pressure.
-            The profiles available for plotting are: enclosed_mass, density, temp, r, L, dq, v, mlt_vc, ener, pressure, neut, h1, prot, he3, he4, c12, n14, o16, ne20, mg24, si28, s32, ar36, ca40, ti44, cr48, cr60, fe52, fe54, fe56, co56, ni56
+            The names of each profile/variable you want to see plotted. Use ["COMPOSITION"] to plot only composition. Default of ["DEFAULT"] will plot enclosed mass, radius, density, temperature, velocity, total specific energy, and pressure.
+            The profiles available for plotting are: enclosed_mass, density, temp, r, L, dq, v, mlt_vc, ener, pressure, and any nuclear network composition
     """
 
-    stir = load_stir_profiles(f"{model_name}_a{stir_alpha}")
     prog = load_progenitor(model_name)
-    data = combine_data(stir, prog)
+    stir = load_stir_profiles(f"{model_name}_a{stir_alpha}", prog["nuclear_network"])
+    data = combine_data(stir, prog, stir_portion)
     write_mesa_model(data, prog, f"{model_name}_a{stir_alpha}")
     
     # Plot the desired profiles
     if "DEFAULT" in plotted_profiles: plotted_profiles = default_plotted_profiles
+    elif "COMPOSITION" in plotted_profiles: plotted_profiles = prog["nuclear_network"]
     for profile in plotted_profiles:
         plot_profile(data, profile)
     
 
-def combine_data(stir, prog):
+def combine_data(stir, prog, stir_portion):
     """
     Combines data from the STIR domain with the progenitor data outside that domain.
     """
 
     # Determines the end of the STIR domain and start of the progenitor domain
-    stir_domain = stir["r"].values[stir["r"].values <= np.max(stir["r"].values) * 0.85]
+    stir_domain = stir["r"].values[stir["r"].values <= np.max(stir["r"].values) * stir_portion]
     data = { "stir_domain_end": np.argmax(stir_domain) }
     prog_domain = len(prog['profiles'].loc[prog['profiles']['enclosed_mass'].values > np.max(stir['enclosed_mass'].values[:data["stir_domain_end"]])])
 
@@ -118,13 +118,39 @@ def load_progenitor(model_name):
     profile_path = f"{progenitor_directory}/{model_name}{progenitor_suffix}.data"
     model_path = f"{progenitor_directory}/{model_name}{progenitor_suffix}.mod"
 
+    # Reads from the .mod file to get necessary header and footer information
+    with open(model_path, "r") as file:
+
+        # Copies the first few lines of the header to ensure bit flags and units are preserved
+        lines = file.readlines()
+        prog["header_start"] = lines[0] + lines[1] + lines[2]
+
+        # Find the table header and from it grab the nuclear network
+        for line in lines:
+            if "                lnd" in line:
+                prog["table_header"] = line
+                break
+        prog["nuclear_network"] = prog["table_header"].split()[7:]
+
+        # Load each header and footer variable individually
+        for i in np.concat((range(4, 20), range(-3, -1))):
+            line_data = lines[i].split()
+            value = line_data[-1]
+            if "D+" in value or "D-" in value: prog[line_data[0]] = float(value.replace("D", "e")) 
+            elif value.isdigit(): prog[line_data[0]] = int(value)
+            else: prog[line_data[0]] = value
+
+        # These are on the same line so they have to be handled separately
+        prog["cumulative_error/total_energy"] = float(lines[20].split()[1].replace("D", "e"))
+        prog["log_rel_run_E_err"] = float(lines[20].split()[3].replace("D", "e"))
+
     # Load profiles of each variable
     with open(profile_path, "r") as file:
         lines = file.readlines()
 
         # Find the columns that contain the necessary data
         needed_profiles = np.concat((['mass', 'logRho', 'temperature', 'radius_cm', 'luminosity', 
-                                    'logdq', 'velocity', 'conv_vel', 'energy', 'pressure'], nuclear_network))
+                                    'logdq', 'velocity', 'conv_vel', 'energy', 'pressure'], prog["nuclear_network"]))
         input_column_names = lines[5].split()
         column_indices = [input_column_names.index(col) for col in needed_profiles if col in input_column_names]
 
@@ -141,7 +167,7 @@ def load_progenitor(model_name):
 
         # Write the numerical data into a pandas dataframe, renaming columns for compatibility and ease of use
         output_column_names = np.concat((['enclosed_mass', 'density', 'temp', 'r', 'L', 'dq', velocity_col_name, 
-                                        'mlt_vc', 'ener', 'pressure'], nuclear_network))
+                                        'mlt_vc', 'ener', 'pressure'], prog["nuclear_network"]))
         prog["profiles"] = pd.DataFrame(structured_data, columns=output_column_names)
         
         # Invert order of zones since loaded MESA data will have first zone as outer radius
@@ -156,38 +182,27 @@ def load_progenitor(model_name):
         prog["profiles"] = prog["profiles"].assign(cell_volume = prog_volume) 
         prog["profiles"] = prog["profiles"].assign(gpot = -G * prog["profiles"]['enclosed_mass'].values / prog["profiles"]['r'].values)
 
-    # Reads from the .mod file to get necessary header and footer information
-    with open(model_path, "r") as file:
-
-        # Copies the first few lines of the header to ensure bit flags and units are preserved
-        lines = file.readlines()
-        prog["header_start"] = lines[0] + lines[1] + lines[2]
-
-        # Load each header and footer variable individually
-        for i in np.concat((range(4, 20), range(-3, -1))):
-            line_data = lines[i].split()
-            value = line_data[-1]
-            if "D+" in value or "D-" in value: prog[line_data[0]] = float(value.replace("D", "e")) 
-            elif value.isdigit(): prog[line_data[0]] = int(value)
-            else: prog[line_data[0]] = value
-
-        # These are on the same line so they have to be handled separately
-        prog["cumulative_error/total_energy"] = float(lines[20].split()[1].replace("D", "e"))
-        prog["log_rel_run_E_err"] = float(lines[20].split()[3].replace("D", "e"))
-
     return prog
 
 
-def load_stir_profiles(model_name):
+def load_stir_profiles(model_name, nuclear_network):
     '''Reads in data from a STIR checkpoint (or plot) file, making modifications and returning it as a dataframe.'''
     
     # Load the STIR checking/plot data into a dataframe
     profile_path = f"{stir_profiles_directory}/{model_name}{stir_profiles_suffix}"
-    stir_data = yt.load(profile_path).all_data()
+    stir_ds = yt.load(profile_path)
+    stir_data = stir_ds.all_data()
     needed_profiles = [("gas", "density"), ("flash", "temp"), ("gas", "r"), ("flash", "velx"), ("gas", "pressure"),# ("flash", "ye  "),
                 ("flash", "cell_volume"), ("flash", "ener"), ("flash", "gpot")]
-    for nuc in nuclear_network: needed_profiles.append((nuc))
     stir = stir_data.to_dataframe(needed_profiles)
+    
+    # Try to pull composition from STIR output. If anything is missing, fill it with 1e-99
+    for nuc in nuclear_network: 
+        if ('flash', f'{nuc}') in stir_ds.field_list: 
+            stir[nuc] = stir_data[nuc].v
+        else: 
+            print(f"{nuc} missing from the STIR profiles. Filling with 1e-99.")
+            stir[nuc] = np.ones(stir.shape[0]) * 1e-99
     
     # Renormalize the composition mass fractions since they need to sum to exactly 1 with double precision
     for i in range(stir.shape[0]):
@@ -256,12 +271,11 @@ def write_mesa_model(data, prog, model_name):
    cumulative_error/total_energy      {format_float(prog["cumulative_error/total_energy"])}  log_rel_run_E_err      {format_float(prog["log_rel_run_E_err"])}
                      num_retries                               0
 
-                lnd                        lnT                        lnR                          L                         dq                          {velocity_col_name}                     mlt_vc                   neut                       h1                         prot                       he3                        he4                        c12                        n14                        o16                        ne20                       mg24                       si28                       s32                        ar36                       ca40                       ti44                       cr48                       cr60                       fe52                       fe54                       fe56                       co56                       ni56     
-"""
+""" + prog["table_header"]
 
     # Data that will be written in table form in the stir_output.mod file
     # Also reverses the order of rows in the table so that the first cell is the outer radius and last cell is the center
-    mesa_columns = np.concat((['lnd', 'lnT', 'lnR', 'L', 'dq', velocity_col_name, 'mlt_vc'], nuclear_network))
+    mesa_columns = np.concat((['lnd', 'lnT', 'lnR', 'L', 'dq', velocity_col_name, 'mlt_vc'], prog["nuclear_network"]))
     mesa_input = data["profiles"][mesa_columns].iloc[::-1].reset_index(drop=True)
 
     # Add one line for each cell, consisting of all it's properties
