@@ -158,7 +158,7 @@ def load_progenitor(model_name):
         structured_data = [list(map(float, np.array(line.split())[column_indices])) for line in lines[6:]]
 
         # If any columns are missing from the progenitor, fill them with a very small number. 
-        # Generally only occurs with composition.
+        # This is a failsafe, but shouldn't be necessary since the composition we need is pulled from the .mod file.
         for i, col in enumerate(needed_profiles):
             if col not in input_column_names:
                 print(f"Column {col} missing from progenitor data. Filling with very small number for all cells.")
@@ -306,7 +306,7 @@ def write_mesa_model(data, prog, model_name):
 """
 
     # Write all of the above to the stir_output.mod file
-    output_path = f"{output_directory}/{model_name}{output_suffix}"
+    output_path = f"{output_directory}/{model_name}{output_suffix}.mod"
     with open(f'{output_path}', 'w') as file:
         file.writelines(file_header + '\n'.join(new_lines) + file_footer)
         print(f"Successfully created/updated '{output_path}'")
