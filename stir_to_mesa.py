@@ -53,7 +53,7 @@ def convert(model_name, stir_alpha, stir_portion = 0.8, plotted_profiles = ["DEF
     
     # Plot the desired profiles
     if "DEFAULT" in plotted_profiles: plotted_profiles = default_plotted_profiles
-    elif "COMPOSITION" in plotted_profiles: plotted_profiles = prog["nuclear_network"]
+    if "COMPOSITION" in plotted_profiles: plotted_profiles = prog["nuclear_network"]
     for profile in plotted_profiles:
         plot_profile(data, profile)
     
@@ -330,7 +330,9 @@ def plot_profile(data, profile, zoom_width = 80):
         xaxis = np.arange(data["pre_masscut_profiles"].shape[0])
         xlabel = "zone"
     else:
+        #xaxis = np.log10(data["pre_masscut_profiles"]["r"].values)
         xaxis = data["pre_masscut_profiles"]["enclosed_mass"].values
+        #xlabel = "log(radius)"
         xlabel = "enclosed_mass (M_sun)"
 
     ylog = profile in log_plots
@@ -344,9 +346,10 @@ def plot_profile(data, profile, zoom_width = 80):
     axs[0].set_xlabel(xlabel)
     axs[0].set_ylabel(ylabel)
     axs[0].set_title(f"Full Profile")
-    axs[0].axvspan(xaxis[0], xaxis[data["pns_masscut_index"]], color="red", alpha=0.2, ec=None)
-    axs[0].axvspan(xaxis[data["pns_masscut_index"]], xaxis[data["stir_domain_end"]], color="blue", alpha=0.2, ec=None)
-    axs[0].axvspan(xaxis[data["stir_domain_end"]], xaxis[-1], color="green", alpha=0.2, ec=None)
+    axs[0].axvspan(xaxis[0], xaxis[data["pns_masscut_index"]], color="red", alpha=0.2, ec=None, label = "PNS")
+    axs[0].axvspan(xaxis[data["pns_masscut_index"]], xaxis[data["stir_domain_end"]], color="blue", alpha=0.2, ec=None, label = "STIR")
+    axs[0].axvspan(xaxis[data["stir_domain_end"]], xaxis[-1], color="green", alpha=0.2, ec=None, label = "MESA")
+    axs[0].legend()
 
     # Plot again but zoomed in on the stitch region
     zoom_left = max(0, data["stir_domain_end"] - zoom_width//2)
