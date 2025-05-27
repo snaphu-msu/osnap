@@ -1,7 +1,10 @@
 from scipy.interpolate import RegularGridInterpolator as rgi
 import matplotlib.pyplot as plt
 import numpy as np
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 import pandas as pd
+from progs import ProgModel
 import yaml
 import h5py
 import yt
@@ -46,10 +49,38 @@ def convert(model_name, stir_alpha, stir_portion = 0.8, plotted_profiles = ["DEF
             The profiles available for plotting are: enclosed_mass, density, temp, r, L, dq, v, mlt_vc, ener, pressure, and any nuclear network composition
     """
 
-    prog = load_progenitor(model_name)
+    prog = load_mesa_progenitor(model_name)
     stir = load_stir_profiles(f"{model_name}_a{stir_alpha}", prog["nuclear_network"])
     data = combine_data(stir, prog, stir_portion)
     write_mesa_model(data, prog, f"{model_name}_a{stir_alpha}")
+    
+    # Plot the desired profiles
+    if "DEFAULT" in plotted_profiles: plotted_profiles = default_plotted_profiles
+    if "COMPOSITION" in plotted_profiles: plotted_profiles = prog["nuclear_network"]
+    for profile in plotted_profiles:
+        plot_profile(data, profile)
+
+def stitch_kepler(model_name, prog_source, prog_mass, stir_alpha, stir_portion = 0.8, plotted_profiles = ["DEFAULT"]):
+    """
+    Loads in a Kepler progenitor and STIR profiles, making various modifications to make 
+    them compatible, then stitches them together and plots the results.
+
+    Parameters:
+        model_name (str) :   
+            The name of the model (what comes before .mod or .data in the MESA progenitors).
+        stir_alpha (float) : 
+            The alpha value used for the STIR simulations.
+        stir_portion (float) :
+            What fraction of the STIR domain to include. A value of 0.8 will use progenitor data for the last 20% of the STIR domain.
+        plotted_profiles (numpy array (str)) : 
+            The names of each profile/variable you want to see plotted. Use ["COMPOSITION"] to plot only composition. Default of ["DEFAULT"] will plot enclosed mass, radius, density, temperature, velocity, total specific energy, and pressure.
+            The profiles available for plotting are: enclosed_mass, density, temp, r, L, dq, v, mlt_vc, ener, pressure, and any nuclear network composition
+    """
+
+    prog = load_kepler_progenitor(prog_source, prog_mass)
+    stir = load_stir_profiles(f"{model_name}_a{stir_alpha}", prog["nuclear_network"])
+    data = combine_data(stir, prog, stir_portion)
+    #write_mesa_model(data, prog, f"{model_name}_a{stir_alpha}")
     
     # Plot the desired profiles
     if "DEFAULT" in plotted_profiles: plotted_profiles = default_plotted_profiles
@@ -111,7 +142,7 @@ def combine_data(stir, prog, stir_portion):
     return data
 
 
-def load_progenitor(model_name):
+def load_mesa_progenitor(model_name):
     '''Loads a MESA progenitor.'''
 
     prog = {}
@@ -184,6 +215,34 @@ def load_progenitor(model_name):
 
     return prog
 
+
+def load_kepler_progenitor(source, mass):        
+        
+        # TODO: Loading a Kepler progenitor. Currently not fully implemented!
+        # TODO: Missing prot (maybe same as h1), cr60, co56
+        # TODO: May need to convert velocity to the cell center riemann velocity if using not using cell edge
+        # TODO: Will produce errors due to changes in data structure and needed variables
+
+        prog = {}
+        
+        prog["profiles"] = ProgModel(str(mass), source).profile
+        prog["profiles"].rename(columns={"radius_edge": "r", "temperature": "temp", "neutrons": "neut", "luminosity": "L", "energy": "ener"}, inplace=True)
+        prog["nuclear_network"] = ['neut', 'h1', 'he3', 'he4', 'c12', 'n14', 'o16', 'ne20', 'mg24', 'si28', 's32', 'ar36', 'ca40', 'ti44', 'cr48', 'fe52', 'fe54', 'ni56', 'fe56', 'fe']
+
+        # TODO: Temporary measure until I figure out what to do about missing compositions
+        #prog["profiles"] = prog["profiles"].assign(prot = np.zeros(prog["profiles"].shape[0]), 
+        #                                           co56 = np.zeros(prog["profiles"].shape[0]), 
+        #                                           cr60 = np.zeros(prog["profiles"].shape[0]))
+
+        # Calculates the progenitor volume, enclosed mass, and gravitational potential
+        prog_volume = (4/3) * np.pi * np.diff(np.concatenate(([0], prog["profiles"]['r'].values**3)))
+        prog["profiles"] = prog["profiles"].assign(cell_volume = prog_volume) 
+        prog["profiles"] = prog["profiles"].assign(enclosed_mass = np.cumsum(prog["profiles"]['cell_volume'].values * prog["profiles"]['density'].values) / M_sun)
+        prog["profiles"] = prog["profiles"].assign(gpot = -G * prog["profiles"]['enclosed_mass'].values / prog["profiles"]['r'].values)
+
+        print(prog["profiles"].columns.to_list())
+
+        return prog
 
 def load_stir_profiles(model_name, nuclear_network):
     '''Reads in data from a STIR checkpoint (or plot) file, making modifications and returning it as a dataframe.'''
