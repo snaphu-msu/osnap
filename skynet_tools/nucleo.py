@@ -34,8 +34,6 @@ def do_trajectories(model_path, stir_model, plt_file = False):
     base = model_path + "/output/" + stir_model + ext
     datfile = model_path + "/" + stir_model + ".dat"
 
-    nblockx = 15
-    blocksize = 16
     nsub = 20
 
     # examine data file to find end point of nucleosynthesis

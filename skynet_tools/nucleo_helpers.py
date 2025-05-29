@@ -69,6 +69,9 @@ def setup_CGs(grid,posindices,level,dsstart,dsend):
     x = np.asarray(np.linspace(left_edge[0],left_edge[0]+grid.dds[0]*3,3,endpoint=False)+grid.dds[0]*0.5)
 
     t = np.asarray([dsend.current_time.v.item(),dsstart.current_time.v.item()])
+
+    print("x:", np.min(x), np.max(x))
+    print("t:", np.min(t), np.max(t))
         
     velx = np.array([CG1['velx'].v[:,0,0],CG0['velx'].v[:,0,0]])
                      
@@ -154,14 +157,17 @@ def evolve_back_one_file_many(dsstart,dsend,starting_points,nsub,nblockx,blocksi
             try:
                 lvelx = rgi['velx'](point[:2]).item()
             except:
-                print("outside error?",starting_point,point,x)
-                print(rgi['velx'].grid,rgi['velx'].values)
+                print("starting point", starting_point)
+                print("point", point)
+                print("x",x)
+                print("grid", rgi['velx'].grid)
+                print("values", rgi['velx'].values)
                 lvelx = rgi['velx'](point[:2]).item()
             point = np.add(point, (dt,dt*lvelx,0.0,0.0)) 
             if point[1]<0.0:
                 point[1] = 1e-20
             if point[1]<x[0] or point[1]>x[-1]:
-                grid, level,posindices = cascade_to_leaf(dsstart,point[1:],level0_blockedge,level0,blocksize)
+                grid, level, posindices = cascade_to_leaf(dsstart,point[1:],level0_blockedge,level0,blocksize)
                 x,t,rgi = setup_CGs(grid,posindices,level,dsstart,dsend)
             if i==0: point[0] += 1e-8
         point[0] += 1e-8
