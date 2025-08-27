@@ -153,8 +153,14 @@ def load_stir_profiles(model_name, nuclear_network):
     enclosed_mass = np.cumsum(stir['cell_volume'].values * stir['density'].values) / M_sun
     stir = stir.assign(enclosed_mass = enclosed_mass)
 
+    stir["ener"] = calculte_total_specific_energy(stir_data)
+
+    return stir
+
+def calculte_total_specific_energy(stir_data):
+
     # Load the equation of state used by STIR
-    EOS = h5py.File(eos_file_path,'r')
+    EOS = h5py.File(eos_file_path, 'r')
     mif_logenergy = RegularGridInterpolator((EOS['ye'], EOS['logtemp'], EOS['logrho']), 
                                             EOS['logenergy'][:,:,:], bounds_error=False)
 
@@ -165,9 +171,8 @@ def load_stir_profiles(model_name, nuclear_network):
     energy = 10.0 ** mif_logenergy(np.array([lye, llogtemp, llogrho]).T)
     llogtemp = llogtemp * 0.0 - 2.0
     energy0 = 10.0 ** mif_logenergy(np.array([lye, llogtemp, llogrho]).T)
-    stir["ener"] = (0.5 * stir_data['velx'] ** 2 + (energy - energy0) * yt.units.erg / yt.units.g).v
 
-    return stir
+    return (0.5 * stir_data['velx'] ** 2 + (energy - energy0) * yt.units.erg / yt.units.g).v
 
 
 def shift_to_cell_edge(profile):
