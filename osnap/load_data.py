@@ -17,8 +17,8 @@ def load_mesa_progenitor(model_name):
     '''Loads a MESA progenitor.'''
 
     prog = {}
-    profile_path = f"{progenitor_directory}/{model_name}{progenitor_suffix}.data"
-    model_path = f"{progenitor_directory}/{model_name}{progenitor_suffix}.mod"
+    profile_path = f"{progenitor_directory}/MESA/{model_name}{progenitor_suffix}.data"
+    model_path = f"{progenitor_directory}/MESA/{model_name}{progenitor_suffix}.mod"
 
     # Reads from the .mod file to get necessary header and footer information
     with open(model_path, "r") as file:
@@ -87,23 +87,18 @@ def load_mesa_progenitor(model_name):
     return prog
 
 
-def load_kepler_progenitor(source, mass):        
-        
-        # TODO: Loading a Kepler progenitor. Currently not fully implemented!
-        # TODO: Missing prot (maybe same as h1), cr60, co56
-        # TODO: May need to convert velocity to the cell center riemann velocity if using not using cell edge
-        # TODO: Will produce errors due to changes in data structure and needed variables
+def load_kepler_progenitor(source, mass):
 
         prog = {}
         
-        prog["profiles"] = ProgModel(str(mass), source).profile
-        prog["profiles"].rename(columns={"radius_edge": "r", "temperature": "temp", "neutrons": "neut", "luminosity": "L", "energy": "ener"}, inplace=True)
+        prog["profiles"] = ProgModel(str(mass), source, data_dir = progenitor_directory).profile
+        prog["profiles"].rename(columns={"radius_edge": "r", "velx_edge": "v", "temperature": "temp", "neutrons": "neut", "luminosity": "L", "energy": "ener"}, inplace=True)
         prog["nuclear_network"] = ['neut', 'h1', 'he3', 'he4', 'c12', 'n14', 'o16', 'ne20', 'mg24', 'si28', 's32', 'ar36', 'ca40', 'ti44', 'cr48', 'fe52', 'fe54', 'ni56', 'fe56', 'fe']
 
         # TODO: Temporary measure until I figure out what to do about missing compositions
-        #prog["profiles"] = prog["profiles"].assign(prot = np.zeros(prog["profiles"].shape[0]), 
-        #                                           co56 = np.zeros(prog["profiles"].shape[0]), 
-        #                                           cr60 = np.zeros(prog["profiles"].shape[0]))
+        prog["profiles"] = prog["profiles"].assign(prot = np.zeros(prog["profiles"].shape[0]), 
+                                                  co56 = np.zeros(prog["profiles"].shape[0]), 
+                                                  cr60 = np.zeros(prog["profiles"].shape[0]))
 
         # Calculates the progenitor volume, enclosed mass, and gravitational potential
         prog_volume = (4/3) * np.pi * np.diff(np.concatenate(([0], prog["profiles"]['r'].values**3)))
@@ -112,13 +107,15 @@ def load_kepler_progenitor(source, mass):
         prog["profiles"] = prog["profiles"].assign(gpot = -G * prog["profiles"]['enclosed_mass'].values / prog["profiles"]['r'].values)
 
         # TODO: Remove after testing
-        print(prog["profiles"].columns.to_list())
+        #print(prog["profiles"].columns.to_list())
 
         return prog
 
 
-def load_stir_profiles(model_name, nuclear_network):
+def load_stir_profiles(model_name, nuclear_network, post_proc_nuc = None, verbose = True):
     '''Reads in data from a STIR checkpoint (or plot) file, making modifications and returning it as a dataframe.'''
+
+    if verbose: print("Loading STIR checkpoint file and converting to dataframe.")
     
     # Load the STIR checking/plot data into a dataframe
     profile_path = f"{stir_profiles_directory}/{model_name}{stir_profiles_suffix}"
@@ -127,19 +124,48 @@ def load_stir_profiles(model_name, nuclear_network):
     needed_profiles = [("gas", "density"), ("flash", "temp"), ("gas", "r"), ("flash", "velx"), ("gas", "pressure"),# ("flash", "ye  "),
                 ("flash", "cell_volume"), ("flash", "ener"), ("flash", "gpot")]
     stir = stir_data.to_dataframe(needed_profiles)
+
+    if verbose: print("Pulling composition from STIR data.")
+    
+    # Calculate the enclosed mass for every zone
+    enclosed_mass = np.cumsum(stir['cell_volume'].values * stir['density'].values) / M_sun
+    stir = stir.assign(enclosed_mass = enclosed_mass)
     
     # Try to pull composition from STIR output. If anything is missing, fill it with 1e-99
+    # Collect all new columns first to avoid DataFrame fragmentation
+    new_columns = {}
     for nuc in nuclear_network: 
         if ('flash', f'{nuc}') in stir_ds.field_list: 
-            stir[nuc] = stir_data[nuc].v
+            new_columns[nuc] = stir_data[nuc].v
         else: 
-            print(f"{nuc} missing from the STIR profiles. Filling with 1e-99.")
-            stir[nuc] = np.ones(stir.shape[0]) * 1e-99
+            if verbose: print(f"{nuc} missing from the STIR profiles. Filling with 1e-99.")
+            new_columns[nuc] = np.ones(stir.shape[0]) * 1e-99
     
+    # Add all new columns at once to avoid fragmentation
+    if new_columns:
+        stir = pd.concat([stir, pd.DataFrame(new_columns)], axis=1)
+    
+    # If nucleosynthesis was post-processed and is not yet part of the stir checkpoint file, add it here
+    if not(post_proc_nuc is None):
+        updated_nuc = pd.read_csv(post_proc_nuc)
+        new_cols = {}
+        for nuc in updated_nuc.columns[1:]:
+            values = np.interp(stir['enclosed_mass'].values, updated_nuc['mass'].values, updated_nuc[nuc].values, left=1e-99, right=1e-99)
+            if nuc in stir.columns: stir[nuc] = values
+            else: 
+                new_cols[nuc] = values
+                nuclear_network.append(nuc)
+        stir = pd.concat((stir, pd.DataFrame(new_cols)), axis=1)
+        if verbose: 
+            print("Updating STIR data with post-processed nucleosynthesis data.")
+            print(updated_nuc.columns[1:])
+
     # Renormalize the composition mass fractions since they need to sum to exactly 1 with double precision
     for i in range(stir.shape[0]):
         mass_fraction_sum = stir.loc[i, nuclear_network].sum()
         stir.loc[i, nuclear_network] /= mass_fraction_sum
+
+    if verbose: print("Adjusting and calculating additional values.")
 
     # To better match MESA outputs, shift radius to cell edge and rename velocity
     stir['r'] = shift_to_cell_edge(stir['r'].values) 
@@ -148,11 +174,6 @@ def load_stir_profiles(model_name, nuclear_network):
     # If using cell edge velocity, shift the STIR velocities to the cell edge as well
     if cell_edge_velocity: 
         stir[velocity_name] = shift_to_cell_edge(stir[velocity_name].values)
-    
-    # Calculate the enclosed mass for every zone
-    enclosed_mass = np.cumsum(stir['cell_volume'].values * stir['density'].values) / M_sun
-    stir = stir.assign(enclosed_mass = enclosed_mass)
-
     stir["ener"] = calculte_total_specific_energy(stir_data)
 
     return stir

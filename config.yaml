@@ -1,7 +1,7 @@
 progenitor_directory: "../data/progenitors"
 progenitor_suffix: ""
-stir_profiles_directory: "../data/stir_profiles"
-stir_profiles_suffix: "_hdf5_chk"
+stir_profiles_directory: "~/_main/projects/osnap/data/stir_profiles"
+stir_profiles_suffix: "_hdf5_plt_cnt"
 output_directory: "../output"
 output_suffix: "_stir_output"
 eos_file_path: "../data/SFHo.h5"
@@ -9,7 +9,7 @@ cell_edge_velocity: True  # Whether to use the velocity at the cell edge or at t
 velocity_name: "v"  # Name of the velocity column in the dataframes
 
 # Which profiles are plotted by default with certain functions
-default_plotted_profiles: ['enclosed_mass', 'r', 'density', 'temp', velocity_col_name, 
+default_plotted_profiles: ['enclosed_mass', 'r', 'density', 'temp', 
                             'total_specific_energy', 'pressure']
 
 # Which profiles should be plotted in log-space

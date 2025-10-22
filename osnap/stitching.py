@@ -22,17 +22,22 @@ def combine_data(stir, prog, stir_portion):
     prog_domain = len(prog['profiles'].loc[prog['profiles']['enclosed_mass'].values > np.max(stir['enclosed_mass'].values[:data["stir_domain_end"]])])
 
     # Combines STIR and progenitor data, simply placing the progenitor data at the end of the STIR domain
+    #print(stir["xe136"].values)
     data["profiles"] = pd.DataFrame(index = pd.RangeIndex(data["stir_domain_end"] + prog_domain), columns = stir.columns, dtype=float)
+    #print(data["profiles"]["xe136"].values)
+    missing_columns = []
     for col in stir.columns:
         
         # If the column doesn't exist in progenitor data, notify us and skip it
         if not(col in prog['profiles']):
-            print(f"Column {col} missing from progenitor data.")
+            missing_columns.append(col)
             continue
         
         # Fill in data for each domain
         data["profiles"][col].values[:data["stir_domain_end"]] = stir[col].values[:data["stir_domain_end"]]
         data["profiles"][col].values[data["stir_domain_end"]:] = prog['profiles'][col].values[-prog_domain:]
+
+    print("Columns in STIR data but missing from progenitor data:", missing_columns)
 
     # Determine the total specific energy in each zone
     data["profiles"] = data["profiles"].assign(total_specific_energy = data["profiles"]['ener'].values + data["profiles"]['gpot'].values)
@@ -62,33 +67,3 @@ def combine_data(stir, prog, stir_portion):
     data["profiles"] = data["profiles"].assign(L = np.ones(data["profiles"].shape[0]) * prog['profiles']["L"].values[-1])
 
     return data
-
-
-## TODO: Likely can remove this function after ensuring Kepler progenitors can be used with the combine_data function
-# def stitch_kepler(model_name, prog_source, prog_mass, stir_alpha, stir_portion = 0.8, plotted_profiles = ["DEFAULT"]):
-#     """
-#     Loads in a Kepler progenitor and STIR profiles, making various modifications to make 
-#     them compatible, then stitches them together and plots the results.
-
-#     Parameters:
-#         model_name (str) :   
-#             The name of the model (what comes before .mod or .data in the MESA progenitors).
-#         stir_alpha (float) : 
-#             The alpha value used for the STIR simulations.
-#         stir_portion (float) :
-#             What fraction of the STIR domain to include. A value of 0.8 will use progenitor data for the last 20% of the STIR domain.
-#         plotted_profiles (numpy array (str)) : 
-#             The names of each profile/variable you want to see plotted. Use ["COMPOSITION"] to plot only composition. Default of ["DEFAULT"] will plot enclosed mass, radius, density, temperature, velocity, total specific energy, and pressure.
-#             The profiles available for plotting are: enclosed_mass, density, temp, r, L, dq, v, mlt_vc, ener, pressure, and any nuclear network composition
-#     """
-
-#     prog = load_kepler_progenitor(prog_source, prog_mass)
-#     stir = load_stir_profiles(f"{model_name}_a{stir_alpha}", prog["nuclear_network"])
-#     data = combine_data(stir, prog, stir_portion)
-    
-#     # Plot the desired profiles
-#     if "DEFAULT" in plotted_profiles: plotted_profiles = default_plotted_profiles
-#     if "COMPOSITION" in plotted_profiles: plotted_profiles = prog["nuclear_network"]
-#     for profile in plotted_profiles:
-#         plot_profile(data, profile)
-    

@@ -2,7 +2,6 @@ import yaml
 from os import path, pardir
 
 # Load configuration
-#stream = open(path.dirname(__file__) + '/../config.yml', 'r')
 stream = open(path.join(path.dirname(__file__), pardir, 'config.yaml'), 'r')
 configs = yaml.safe_load(stream)
 progenitor_directory = configs['progenitor_directory']
