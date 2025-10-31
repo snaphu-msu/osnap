@@ -8,6 +8,7 @@ import progs.progs as progs
 import matplotlib.pyplot as plt
 import pandas as pd
 import time
+import sys
 
 # Hide the yt output
 import yt
@@ -16,10 +17,11 @@ yt.set_log_level(50)
 if __name__ == "__main__":
 
     force_reload_tracers = False
-    num_tracers = 100
+    num_tracers = 100 # TODO: Find ideal tracer count
     zams_mass = 20.0
     alpha = 1.25
 
+    # Generate paths to the different data files
     run_date = "14may19"
     base_path = f"/mnt/research/SNAPhU/STIR/run_sukhbold/run_{run_date}_a{alpha}/run_{zams_mass}"
     model_name = f"stir2_{run_date}_s{zams_mass}_alpha{alpha}"
@@ -57,9 +59,7 @@ if __name__ == "__main__":
     start_time = time.time()
 
     print("Loading the progenitor")
-    progenitor = progs.ProgModel(str(zams_mass), "sukhbold_2016", 
-                                data_dir=config.progenitor_directory)
-                                #data_dir = "/mnt/home/jdelker/_main/projects/osnap/data/progenitors")
+    progenitor = load_data.load_kepler_progenitor("sukhbold_2016", zams_mass)
 
     print("Loading tracer data")
     tracers = fb.load_save.get_tracers(
@@ -75,16 +75,17 @@ if __name__ == "__main__":
     output = sky.do_nucleosynthesis(
         model_path = base_path, 
         stir_model = model_name, 
-        progenitor = progenitor,
+        progenitor = progenitor["model"],
         domain_radius = 1e9,
         tracers = tracers,
         output_path = f"./skynet_output/{run_date}_a{alpha}_run_{zams_mass}",
         verbose = 1
     )
 
+    # Save the traer data to a csv file
     if not os.path.exists('../data/nucleosynthesis'):
         os.makedirs('../data/nucleosynthesis')
-    output.to_csv(f"../data/nucleosynthesis/14may19_m{zams_mass}_a{alpha}_tracers{num_tracers}.csv")
+    output.to_csv(f"../data/nucleosynthesis/{run_date}_m{zams_mass}_a{alpha}_n{num_tracers}.csv")
 
     # Print the time taken to run the nucleosynthesis
     time_elapsed = time.time() - start_time
@@ -96,3 +97,20 @@ if __name__ == "__main__":
     time_elapsed_str = f"{hour_string}:{min_string}:{sec_string}"
     print("Nucleosynthesis complete!")
     print(f"Time Taken: {time_elapsed_str}", f"(per tracer: {(time_elapsed / num_tracers):.2f}s)")
+
+    # Load the stir output, overwriting isotope abundances with post-processed nucleosynthesis data
+    print("Loading STIR profiles w/ added nucleosynthesis data")
+    stir_data = load_data.load_stir_profiles(
+        model_name, 
+        progenitor["nuclear_network"], 
+        f"../data/nucleosynthesis/{run_date}_m{zams_mass}_a{alpha}_n{num_tracers}.csv",
+        verbose=False)
+
+
+    # Add the progenitor data outside the stir domain onto the stir output
+    print("Stitching progenitor onto STIR profiles")
+    stitched = stitching.combine_data(stir_data, progenitor, stir_portion=0.9)
+
+    # Save the final stitched data into it's own file.
+    print("Saving final stitched data")
+    save_data.save_stitched_data(stitched["profiles"], f"../data/nucleosynthesis/stitched_{model_name}")
