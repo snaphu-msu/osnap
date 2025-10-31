@@ -194,99 +194,22 @@ def save_to_tsv(data, file_path):
     print(f"Successfully wrote TSV to '{file_path}'")
 
 
-def save_to_fixed_table(data, file_path, metadata=None, pad=2, max_width=None):
+def save_stitched_data(df, file_path, metadata=None, pad=2):
     """
-    Save tabular data to a fixed-width text format with evenly spaced columns.
+    Save a pandas DataFrame as a fixed-width, human-readable table with optional metadata.
 
-    - Accepts the same shapes as save_to_tsv
-    - Adds a comment header with metadata (YAML if available, else JSON)
-    - Right-aligns numeric columns, left-aligns strings
-    - Creates parent directories; supports '.gz' for compression
-
-    Parameters:
-        data: tabular data (see save_to_tsv)
-        file_path (str): output path ('.gz' will gzip)
-        metadata (dict|None): optional metadata to include in header comments
-        pad (int): spaces between columns
-        max_width (int|None): optional max width per column; values will be truncated with '…'
+    - Writes a comment header with metadata (YAML if available, else JSON)
+    - Uses pandas formatting to align columns; floats use double-precision scientific notation
+    - Supports gzip when file path ends with '.gz'
     """
 
-    def to_list(value):
-        if isinstance(value, np.ndarray):
-            return value.tolist()
-        if pd is not None and isinstance(value, (pd.Series, pd.Index)):
-            return value.tolist()
-        return value
+    if not isinstance(df, pd.DataFrame):
+        df = pd.DataFrame(df)
 
-    # Normalize input to headers and rows
-    headers = []
-    rows = []
+    # Double-precision float formatter
+    float_fmt = lambda x: f"{np.float64(x):.16e}" if pd.notna(x) else "nan"
 
-    if pd is not None and isinstance(data, pd.DataFrame):
-        headers = [str(c) for c in data.columns.tolist()]
-        rows = [list(r) for r in data.itertuples(index=False, name=None)]
-
-    elif isinstance(data, dict) and "isotopes" in data and "abundances" in data and "radius" in data:
-        isotopes = [str(i) for i in to_list(data["isotopes"])]
-        radius = to_list(data["radius"])
-        abundances = to_list(data["abundances"])  # list of rows
-        headers = ["radius"] + isotopes
-        rows = []
-        for r_val, row_vals in zip(radius, abundances):
-            rows.append([r_val] + [v for v in row_vals])
-
-    elif isinstance(data, dict) and "rows" in data and isinstance(data["rows"], list):
-        first_keys = list(data["rows"][0].keys()) if data["rows"] else []
-        key_set = {k for row in data["rows"] for k in row.keys()}
-        headers = [str(k) for k in first_keys] + [str(k) for k in key_set if k not in first_keys]
-        for row in data["rows"]:
-            rows.append([row.get(h, None) for h in headers])
-
-    elif isinstance(data, dict):
-        columns = {str(k): to_list(v) for k, v in data.items()}
-        headers = list(columns.keys())
-        lengths = [len(v) for v in columns.values() if isinstance(v, list)]
-        if lengths and all(l == lengths[0] for l in lengths):
-            n = lengths[0]
-            for i in range(n):
-                rows.append([columns[h][i] if isinstance(columns[h], list) else columns[h] for h in headers])
-        else:
-            headers = ["key", "value"]
-            rows = [[k, v] for k, v in data.items()]
-    else:
-        headers = ["value"]
-        rows = [[data]]
-
-    # Determine alignment and stringified values
-    def is_number(x):
-        return isinstance(x, (int, float, np.integer, np.floating))
-
-    str_rows = []
-    for row in rows:
-        str_row = []
-        for val in row:
-            if val is None:
-                str_row.append("")
-            elif isinstance(val, (np.integer, int)):
-                str_row.append(str(int(val)))
-            elif isinstance(val, (np.floating, float)):
-                # ensure double precision formatting
-                dv = np.float64(val)
-                str_row.append(f"{dv:.16e}")
-            else:
-                str_row.append(str(val))
-        str_rows.append(str_row)
-
-    # Compute column widths
-    widths = []
-    for j, h in enumerate(headers):
-        col_vals = [r[j] for r in str_rows] if str_rows else []
-        w = max(len(str(h)), max((len(v) for v in col_vals), default=0))
-        if max_width is not None:
-            w = min(w, max_width)
-        widths.append(w)
-
-    # Build header comment block
+    # Build metadata header
     header_lines = []
     if metadata:
         header_lines.append("# --- metadata ---")
@@ -297,31 +220,13 @@ def save_to_fixed_table(data, file_path, metadata=None, pad=2, max_width=None):
         header_lines.extend([f"# {line}" if line else "#" for line in meta_text])
         header_lines.append("# --- end metadata ---")
 
-    # Compose table header and rows
-    def format_cell(text, width, align_right):
-        if max_width is not None and len(text) > width:
-            # Reserve one char for ellipsis if trimmed
-            ellipsis = '…'
-            if width >= 2:
-                text = text[:width-1] + ellipsis
-            else:
-                text = ellipsis
-        return text.rjust(width) if align_right else text.ljust(width)
+    # Render DataFrame to fixed-width text with aligned columns
+    table_text = df.to_string(
+        index=False,
+        float_format=float_fmt,
+        col_space=pad
+    )
 
-    # Determine alignment per column based on first non-empty data sample
-    align_right = []
-    for j in range(len(headers)):
-        sample = next((rows[i][j] for i in range(len(rows)) if rows[i][j] is not None), None)
-        align_right.append(is_number(sample))
-
-    sep = ' ' * pad
-    header_line = sep.join(format_cell(str(h), widths[i], align_right[i]) for i, h in enumerate(headers))
-    data_lines = [
-        sep.join(format_cell(str_rows[i][j], widths[j], align_right[j]) for j in range(len(headers)))
-        for i in range(len(str_rows))
-    ]
-
-    # Write out
     parent_dir = os.path.dirname(file_path) or "."
     os.makedirs(parent_dir, exist_ok=True)
 
@@ -331,17 +236,14 @@ def save_to_fixed_table(data, file_path, metadata=None, pad=2, max_width=None):
         return open(path, 'w', encoding='utf-8', newline='')
 
     with open_out(file_path) as f:
-        if header_lines:
-            for line in header_lines:
-                f.write(line + "\n")
-        f.write(header_line + "\n")
-        for line in data_lines:
+        for line in header_lines:
             f.write(line + "\n")
+        f.write(table_text + "\n")
 
-    print(f"Successfully wrote fixed-width table to '{file_path}'")
+    print(f"Saved stitched data to '{file_path}'")
 
 
-def convert(model_name, stir_alpha, progenitor_source = "MESA", stir_portion = 0.8, plotted_profiles = ["DEFAULT"]):
+def convert_to_mesa(model_name, stir_alpha, progenitor_source = "MESA", stir_portion = 0.8, plotted_profiles = ["DEFAULT"]):
     """
     Loads in a MESA progenitor and STIR profiles, making various modifications to make 
     them compatible, then creates a MESA-readable .mod file.
@@ -383,6 +285,19 @@ def write_mesa_model(data, prog, model_name):
     
     def format_int(num):
         return ' ' * (25 - int(np.floor(np.log10(num)))) + str(num)
+
+    # Excise all zones within the PNS radius, since MESA does not want them
+    data["profiles"] = data["profiles"].drop(np.arange(data["pns_masscut_index"] + 1))
+    
+    # Calculate the remaining energy of the star without the PNS
+    data["total_energy"] = data["profiles"]["total_specific_energy"].values * data["profiles"]['density'].values * data["profiles"]['cell_volume'].values
+
+    # Prepares the data for MESA output by adding missing columns
+    data["profiles"] = data["profiles"].assign(lnR = np.log(data["profiles"]['r'].values), lnd = np.log(data["profiles"]['density'].values), lnT = np.log(data["profiles"]['temp'].values))
+    data["profiles"] = data["profiles"].assign(mlt_vc = np.zeros(data["profiles"].shape[0]))
+    
+    # MESA needs the surface luminosity which is the same as in progenitor, but all other values should just be a copy of that value
+    data["profiles"] = data["profiles"].assign(L = np.ones(data["profiles"].shape[0]) * prog['profiles']["L"].values[-1])
     
     # Header Info
     avg_core_density = data["pns_masscut"] * M_sun / (4/3 * np.pi * data["pns_radius"]**3) 

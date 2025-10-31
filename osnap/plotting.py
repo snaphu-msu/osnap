@@ -9,13 +9,13 @@ import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
-def plot_profile(data, profile, zoom_width = 80, save_path = None, force_log = False):
+def plot_profile(data, profile, save_path = None, force_log = False):
     """
     Plots both the full star and a zoomed in region around the point at which STIR and the progenitor are stitched together.
     
     Parameters:
         data (dict) :
-            The combined STIR and MESA data containing paramaters useful drawing domains.
+            The combined STIR and progenitor data.
         profile (numpy array) :
             The profile to be plotted.
         zoom_width (int) :
@@ -24,17 +24,15 @@ def plot_profile(data, profile, zoom_width = 80, save_path = None, force_log = F
 
     # Most plots should use enclosed mass as the x-axis, except the enclosed mass plot
     if profile == "enclosed_mass":
-        xaxis = np.arange(data["pre_masscut_profiles"].shape[0])
+        xaxis = np.arange(data["profiles"].shape[0])
         xlabel = "zone"
     else:
-        #xaxis = np.log10(data["pre_masscut_profiles"]["r"].values)
-        xaxis = data["pre_masscut_profiles"]["enclosed_mass"].values
-        #xlabel = "log(radius)"
+        xaxis = data["profiles"]["enclosed_mass"].values
         xlabel = "enclosed_mass (M_sun)"
 
     ylog = profile in log_plots or force_log
     ylabel = f"log({profile})" if ylog else profile
-    yaxis = data["pre_masscut_profiles"][profile].values
+    yaxis = data["profiles"][profile].values
     if ylog: yaxis = np.log10(yaxis)
 
     def plot_data(ax, left_lim, right_lim, title):

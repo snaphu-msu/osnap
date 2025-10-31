@@ -91,7 +91,8 @@ def load_kepler_progenitor(source, mass):
 
         prog = {}
         
-        prog["profiles"] = ProgModel(str(mass), source, data_dir = progenitor_directory).profile
+        prog["model"] = ProgModel(str(mass), source, data_dir = progenitor_directory)
+        prog["profiles"] = prog["model"].profile
         prog["profiles"].rename(columns={"radius_edge": "r", "velx_edge": "v", "temperature": "temp", "neutrons": "neut", "luminosity": "L", "energy": "ener"}, inplace=True)
         prog["nuclear_network"] = ['neut', 'h1', 'he3', 'he4', 'c12', 'n14', 'o16', 'ne20', 'mg24', 'si28', 's32', 'ar36', 'ca40', 'ti44', 'cr48', 'fe52', 'fe54', 'ni56', 'fe56', 'fe']
 
@@ -105,9 +106,6 @@ def load_kepler_progenitor(source, mass):
         prog["profiles"] = prog["profiles"].assign(cell_volume = prog_volume) 
         prog["profiles"] = prog["profiles"].assign(enclosed_mass = np.cumsum(prog["profiles"]['cell_volume'].values * prog["profiles"]['density'].values) / M_sun)
         prog["profiles"] = prog["profiles"].assign(gpot = -G * prog["profiles"]['enclosed_mass'].values / prog["profiles"]['r'].values)
-
-        # TODO: Remove after testing
-        #print(prog["profiles"].columns.to_list())
 
         return prog
 
@@ -212,3 +210,19 @@ def shift_to_cell_edge(profile):
     shifted_data[:-1] = profile[:-1] + 0.5 * (profile[1:] - profile[:-1])
     shifted_data[-1] = profile[-1] + 0.5 * (profile[-1] - profile[-2])
     return shifted_data
+
+def load_stitched_data(file_path):
+    """
+    Load a stitched fixed-width file back into a DataFrame using whitespace-delimited parsing.
+
+    - Ignores metadata lines starting with '#'
+    - Uses the first non-comment line as the header
+    - Supports gzip automatically via pandas
+    """
+    
+    return pd.read_csv(
+        file_path,
+        delim_whitespace=True,
+        comment='#',
+        engine='python'
+    )
