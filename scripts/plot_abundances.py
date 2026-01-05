@@ -3,19 +3,19 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-
-### Stitch on progenitor, then plot total mass of each isotope vs atomic mass number
-### Plot nickel-56 yields vs zams mass
+# Plot the abundance of the given isotopes vs enclosed mass for a given stitched model
 if __name__ == "__main__":
     if len(sys.argv) == 1:
         print("No path or isotope were specified.")
     else:
         path = str(sys.argv[1])
-        data = pd.read_csv(path)
+        data = pd.read_csv("../data/nucleosynthesis/" + path, sep='\s+')
+        #print(data)
         if len(sys.argv) == 2:
             useful_columns = []
             print(f"No isotope was specified. The possible isotopes are: {data.columns[2:]}")
         else:
+            plt.figure(figsize=(10, 5))
             isotopes = sys.argv[2:]
             isotope_string = ""
             for isotope in isotopes:
@@ -23,9 +23,15 @@ if __name__ == "__main__":
                     print(f"{isotope} is not a valid isotope. The possible isotopes are: {data.columns[2:]}")
                 else:
                     isotope_string += f"_{isotope}"
-                    plt.plot(data["mass"], np.log10(data[isotope]), label = isotope)
+                    plt.plot(data["enclosed_mass"], data[isotope], label = isotope)
+                    total_mass = np.sum(data[isotope] * data["density"] * data["cell_volume"]) / 1.98e33
+                    print(f"Total mass of {isotope} is {total_mass} M_sun")
+            plt.semilogy()
             plt.title(f"Final Mass Fraction Profiles")
             plt.xlabel("Mass [M_sun]")
             plt.ylabel(f"Log Mass Fraction")
+            plt.ylim(1e-5, 1)
+            plt.xlim(1.8, 3)
+            #plt.axvline(3.03, ls = "--", color = "red")
             plt.legend()
-            plt.savefig(f"plots/{path[:-4]}{isotope_string}.png")
+            plt.savefig(f"../data/plots/{path}_{isotope_string}.png")
