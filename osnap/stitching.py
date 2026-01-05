@@ -39,10 +39,9 @@ def combine_data(stir, prog, stir_portion, verbose = False):
     if verbose:
         print("Columns in STIR data but missing from progenitor data:", missing_columns)
 
-    print(data["profiles"]["xe136"].values)
-
     # Determine the total specific energy in each zone
-    data["profiles"] = data["profiles"].assign(total_specific_energy = data["profiles"]['ener'].values + data["profiles"]['gpot'].values)
+    mass_col_index = data["profiles"].columns.get_loc('enclosed_mass')
+    data["profiles"].insert(mass_col_index + 1, 'total_specific_energy', data["profiles"]['ener'].values + data["profiles"]['gpot'].values)
 
     # Set the PNS mass as the enclosed mass within which all cells have a negative total specific energy
     data["pns_masscut_index"] = np.min(np.where(data["profiles"]['total_specific_energy'].values >= 0)) - 1
@@ -52,6 +51,6 @@ def combine_data(stir, prog, stir_portion, verbose = False):
     # Find the mass of the star, and of the star outside the PNS
     data["total_mass"] = np.sum(data["profiles"]['density'] * data["profiles"]['cell_volume'])
     data["xmstar"] = data["total_mass"] - data["pns_masscut"] * M_sun
-    data["profiles"]["dq"] = data["profiles"]['density'] * data["profiles"]['cell_volume'] / data["xmstar"]
+    data["profiles"].insert(mass_col_index + 2, 'dq', data["profiles"]['density'] * data["profiles"]['cell_volume'] / data["xmstar"])
 
     return data

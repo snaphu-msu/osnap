@@ -12,6 +12,43 @@ import yt
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
+def load_mesa_template(model_name):
+    '''Loads a MESA progenitor as a template for use in creating an output .mod file.'''
+
+    prog = {}
+    model_path = f"{progenitor_directory}/MESA/{model_name}{progenitor_suffix}.mod"
+
+    # Reads from the .mod file to get necessary header and footer information
+    with open(model_path, "r") as file:
+
+        # Copies the first few lines of the header to ensure bit flags and units are preserved
+        lines = file.readlines()
+        prog["header_start"] = lines[0] + lines[1] + lines[2]
+
+        # Find the table header and from it grab the nuclear network
+        for line in lines:
+            if "                lnd" in line:
+                prog["table_header"] = line
+                break
+        
+        # TODO: Make this less hardcoded
+        prog["nuclear_network"] = prog["table_header"].split()[8:]
+
+        # Load each header and footer variable individually
+        for i in np.concat((range(4, 23), range(-3, -1))):
+            line_data = lines[i].split()
+            value = line_data[-1]
+            if "D+" in value or "D-" in value: prog[line_data[0]] = float(value.replace("D", "e")) 
+            elif value.isdigit(): prog[line_data[0]] = int(value)
+            else: prog[line_data[0]] = value
+
+        # These are on the same line so they have to be handled separately
+        # TODO: Make this less hardcoded
+        prog["cumulative_error/total_energy"] = float(lines[23].split()[1].replace("D", "e"))
+        prog["log_rel_run_E_err"] = float(lines[23].split()[3].replace("D", "e"))
+
+    return prog
+
 
 def load_mesa_progenitor(model_name):
     '''Loads a MESA progenitor.'''
@@ -110,13 +147,13 @@ def load_kepler_progenitor(source, mass):
         return prog
 
 
-def load_stir_profiles(model_name, nuclear_network, post_proc_nuc = None, verbose = True):
+def load_stir_profiles(model_name, nuclear_network, stir_profile_path = None, post_proc_nuc = None, verbose = True):
     '''Reads in data from a STIR checkpoint (or plot) file, making modifications and returning it as a dataframe.'''
 
     if verbose: print("Loading STIR checkpoint file and converting to dataframe.")
     
     # Load the STIR checking/plot data into a dataframe
-    profile_path = f"{stir_profiles_directory}/{model_name}{stir_profiles_suffix}"
+    profile_path = f"{stir_profiles_directory}/{model_name}{stir_profiles_suffix}" if stir_profile_path is None else stir_profile_path
     stir_ds = yt.load(profile_path)
     stir_data = stir_ds.all_data()
     needed_profiles = [("gas", "density"), ("flash", "temp"), ("gas", "r"), ("flash", "velx"), ("gas", "pressure"),# ("flash", "ye  "),
@@ -145,18 +182,19 @@ def load_stir_profiles(model_name, nuclear_network, post_proc_nuc = None, verbos
     
     # If nucleosynthesis was post-processed and is not yet part of the stir checkpoint file, add it here
     if not(post_proc_nuc is None):
-        updated_nuc = pd.read_csv(post_proc_nuc)
+        composition = pd.read_csv(post_proc_nuc, delim_whitespace=True)
         new_cols = {}
-        for nuc in updated_nuc.columns[1:]:
-            values = np.interp(stir['enclosed_mass'].values, updated_nuc['mass'].values, updated_nuc[nuc].values, left=1e-99, right=1e-99)
-            if nuc in stir.columns: stir[nuc] = values
+        for nuc in composition.columns[1:]:
+            values = np.interp(stir['enclosed_mass'].values, composition['mass'].values, composition[nuc].values, left=1e-99, right=1e-99)
+            if nuc in stir.columns: 
+                stir[nuc] = values
             else: 
                 new_cols[nuc] = values
                 nuclear_network.append(nuc)
         stir = pd.concat((stir, pd.DataFrame(new_cols)), axis=1)
         if verbose: 
             print("Updating STIR data with post-processed nucleosynthesis data.")
-            print(updated_nuc.columns[1:])
+            print(composition.columns[1:])
 
     # Renormalize the composition mass fractions since they need to sum to exactly 1 with double precision
     for i in range(stir.shape[0]):
@@ -172,11 +210,11 @@ def load_stir_profiles(model_name, nuclear_network, post_proc_nuc = None, verbos
     # If using cell edge velocity, shift the STIR velocities to the cell edge as well
     if cell_edge_velocity: 
         stir[velocity_name] = shift_to_cell_edge(stir[velocity_name].values)
-    stir["ener"] = calculte_total_specific_energy(stir_data)
+    stir["ener"] = calculate_total_specific_energy(stir_data)
 
     return stir
 
-def calculte_total_specific_energy(stir_data):
+def calculate_total_specific_energy(stir_data):
 
     # Load the equation of state used by STIR
     EOS = h5py.File(eos_file_path, 'r')
