@@ -2,6 +2,7 @@ import sys
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+from osnap.config import config
 
 # Plot the abundance of the given isotopes vs enclosed mass for a given stitched model
 if __name__ == "__main__":
@@ -9,8 +10,8 @@ if __name__ == "__main__":
         print("No path or isotope were specified.")
     else:
         path = str(sys.argv[1])
-        data = pd.read_csv("../data/nucleosynthesis/" + path, sep='\s+')
-        #print(data)
+        data = pd.read_csv(config.nucleo_results_directory + "/" + path, sep='\s+')
+
         if len(sys.argv) == 2:
             useful_columns = []
             print(f"No isotope was specified. The possible isotopes are: {data.columns[2:]}")
@@ -34,4 +35,4 @@ if __name__ == "__main__":
             plt.xlim(1.8, 3)
             #plt.axvline(3.03, ls = "--", color = "red")
             plt.legend()
-            plt.savefig(f"../data/plots/{path}_{isotope_string}.png")
+            plt.savefig(f"{config.plot_directory}/{path}_{isotope_string}.png")

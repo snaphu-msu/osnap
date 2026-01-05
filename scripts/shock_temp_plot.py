@@ -6,6 +6,7 @@ import os
 import numpy as np
 import yt
 import matplotlib.pyplot as plt
+from osnap.config import config
 
 masses = np.array(["9.0", "9.25", "9.5", "9.75", "10.0", "10.25", "10.5", "10.75", "11.0", "11.25", "11.5", "11.75", 
                    "12.0", "12.25", "12.5", "12.75", "13.0", "13.1", "13.2", "13.3", "13.4", "13.5", "13.6", "13.7", 
@@ -57,4 +58,4 @@ plt.scatter(successful_masses, temps, s=5)
 plt.xlabel("Mass (Msun)")
 plt.ylabel("Temperature (K)")
 plt.title(f"Shock Temperature vs. Mass (w/ alpha = {alpha}")
-plt.savefig(f"../data/plots/shock_temp_{run_date}_a{alpha}.png")
+plt.savefig(f"{config.plot_directory}/shock_temp_{run_date}_a{alpha}.png")

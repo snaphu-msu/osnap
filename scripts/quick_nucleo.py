@@ -17,8 +17,8 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers=False, rerun_nucleo=F
     run_date = "14may19"
     base_path = f"/mnt/research/SNAPhU/STIR/run_sukhbold/run_{run_date}_a{alpha}/run_{zams_mass}"
     model_name = f"stir2_{run_date}_s{zams_mass}_alpha{alpha}"
-    nucleo_output_path = f"../data/nucleosynthesis/{run_date}_m{zams_mass}_a{alpha}_n{num_tracers}"
-    stitched_output_path = f"../data/nucleosynthesis/stitched_{model_name}_n{num_tracers}"
+    nucleo_output_path = f"{config.nucleo_results_directory}/{run_date}_m{zams_mass}_a{alpha}_n{num_tracers}"
+    stitched_output_path = f"{config.stitched_output_directory}/stitched_{model_name}_n{num_tracers}"
 
     # If this model has already been run completely, skip this model
     if os.path.exists(stitched_output_path) and not(rerun_stitching):

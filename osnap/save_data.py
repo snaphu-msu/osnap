@@ -141,7 +141,7 @@ def write_mesa_model(data, prog, model_name, mesa_template = None):
 """
 
     # Write all of the above to the stir_output.mod file
-    output_path = f"{output_directory}/{model_name}{output_suffix}.mod"
+    output_path = f"{mesa_export_directory}/{model_name}{output_suffix}.mod"
     with open(f'{output_path}', 'w') as file:
         file.writelines(file_header + '\n'.join(new_lines) + file_footer)
         print(f"Successfully created/updated '{output_path}'")

@@ -1,10 +1,19 @@
-progenitor_directory: "../data/progenitors"
+# Folder paths
+relative_paths: True # If false, paths need to be exact full paths. If true, they are relative to this config file's location.
+progenitor_directory: "data/progenitors" # Where progenitor models should be loaded from
+stir_profiles_directory: "data/stir_data" # Where the STIR profiles should be loaded from
+nucleo_results_directory: "data/nucleo_results" # Where the output from the nucleosynthesis calculations are saved
+stitched_output_directory: "data/stitched_output" # Where the stitched profiles should be saved (these combine the progenitor and STIR profiles with updated nucleosynthesis)
+mesa_export_directory: "data/mesa_ready_export" # Where the final MESA-ready files are saved
+plot_directory: "data/plots" # Where to save plots
+eos_file_path: "data/SFHo.h5" # Path to the equation of state file
+
+# Optional suffixes to use at the end of file names
 progenitor_suffix: ""
-stir_profiles_directory: "~/_main/projects/osnap/data/stir_profiles"
 stir_profiles_suffix: "_hdf5_plt_cnt"
-output_directory: "../output"
-output_suffix: "_stir_output"
-eos_file_path: "../data/SFHo.h5"
+output_suffix: "_output"
+
+# Velocity options
 cell_edge_velocity: True  # Whether to use the velocity at the cell edge or at the cell center
 velocity_name: "v"  # Name of the velocity column in the dataframes
 
