@@ -2,20 +2,20 @@ import yaml
 from os import path, pardir
 
 # Load configuration
-current_path = path.join(path.dirname(__file__), pardir)
-stream = open(path.join(current_path, 'config.yaml'), 'r')
+root_path = path.join(path.dirname(__file__), pardir)
+stream = open(path.join(root_path, 'config.yaml'), 'r')
 configs = yaml.safe_load(stream)
 
 # File paths
 relative_paths = configs['relative_paths']
 if relative_paths:
-    progenitor_directory = path.join(current_path, configs['progenitor_directory'])
-    stir_profiles_directory = path.join(current_path, configs['stir_profiles_directory'])
-    stitched_output_directory = path.join(current_path, configs['stitched_output_directory'])
-    nucleo_results_directory = path.join(current_path, configs['nucleo_results_directory'])
-    mesa_export_directory = path.join(current_path, configs['mesa_export_directory'])
-    plot_directory = path.join(current_path, configs['plot_directory'])
-    eos_file_path = path.join(current_path, configs['eos_file_path'])
+    progenitor_directory = path.join(root_path, configs['progenitor_directory'])
+    stir_profiles_directory = path.join(root_path, configs['stir_profiles_directory'])
+    stitched_output_directory = path.join(root_path, configs['stitched_output_directory'])
+    nucleo_results_directory = path.join(root_path, configs['nucleo_results_directory'])
+    mesa_export_directory = path.join(root_path, configs['mesa_export_directory'])
+    plot_directory = path.join(root_path, configs['plot_directory'])
+    eos_file_path = path.join(root_path, configs['eos_file_path'])
 else:
     progenitor_directory = configs['progenitor_directory']
     stir_profiles_directory = configs['stir_profiles_directory']
