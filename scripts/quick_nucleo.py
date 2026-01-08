@@ -111,11 +111,11 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers=False, rerun_nucleo=F
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description='Run nucleosynthesis calculations')
-    parser.add_argument('-n', '--num-tracers', nargs='+', type=int, default=[100],
+    parser.add_argument('-t', '--tracer-count', nargs='+', type=int, default=[100],
                         help='Number of tracers (can specify multiple values for multiple runs), default: 100')
     parser.add_argument('-m', '--masses', nargs='+', type=str, required=True,
                         help='ZAMS masses (can specify multiple values, or use "all" for all masses)')
-    parser.add_argument('-a', '--alpha', nargs='*', type=float, default=[1.25],
+    parser.add_argument('-a', '--alphas', nargs='*', type=float, default=[1.25],
                         help='Alpha values (can specify multiple values, default: 1.25)')
     parser.add_argument('-f', '--force-reload', action='store_true',
                         help='Forces all tracer data, nucleosynthesis, and stiching to be rerun even if there is existing usable data cached.')

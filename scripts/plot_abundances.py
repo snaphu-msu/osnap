@@ -1,38 +1,78 @@
-import sys
+from osnap import *
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from osnap.config import config
+import argparse
 
 # Plot the abundance of the given isotopes vs enclosed mass for a given stitched model
 if __name__ == "__main__":
-    if len(sys.argv) == 1:
-        print("No path or isotope were specified.")
-    else:
-        path = str(sys.argv[1])
-        data = pd.read_csv(config.nucleo_results_directory + "/" + path, sep='\s+')
 
-        if len(sys.argv) == 2:
-            useful_columns = []
-            print(f"No isotope was specified. The possible isotopes are: {data.columns[2:]}")
-        else:
-            plt.figure(figsize=(10, 5))
-            isotopes = sys.argv[2:]
-            isotope_string = ""
-            for isotope in isotopes:
-                if isotope not in data.columns:
-                    print(f"{isotope} is not a valid isotope. The possible isotopes are: {data.columns[2:]}")
-                else:
-                    isotope_string += f"_{isotope}"
-                    plt.plot(data["enclosed_mass"], data[isotope], label = isotope)
-                    total_mass = np.sum(data[isotope] * data["density"] * data["cell_volume"]) / 1.98e33
-                    print(f"Total mass of {isotope} is {total_mass} M_sun")
-            plt.semilogy()
-            plt.title(f"Final Mass Fraction Profiles")
-            plt.xlabel("Mass [M_sun]")
-            plt.ylabel(f"Log Mass Fraction")
-            plt.ylim(1e-5, 1)
-            plt.xlim(1.8, 3)
-            #plt.axvline(3.03, ls = "--", color = "red")
-            plt.legend()
-            plt.savefig(f"{config.plot_directory}/{path}_{isotope_string}.png")
+    run_date = "14may19"
+
+    # Parse the arguments passed in
+    parser = argparse.ArgumentParser(description='Plot abundances for given isotopes, masses, and alpha values.')
+    parser.add_argument('-n', '--name', nargs=1, type=str, required = True,
+                        help='Name of the saved plot file.')
+    parser.add_argument('-m', '--masses', nargs='*', type=str, default=["20.0"],
+                        help='ZAMS masses (can specify multiple values, default: "20.0")')
+    parser.add_argument('-a', '--alphas', nargs='*', type=float, default=["1.25"],
+                        help='Alpha values (can specify multiple values, default: "1.25")')
+    parser.add_argument('-i', '--isotopes', nargs='+', type=str, required = True,
+                        help='Isotopes to plot (can specify multiple isotopes)')
+    parser.add_argument('-t', '--tracer-count', nargs='*', type=int, default=[1000],
+                        help='Number of tracers (can specify multiple values, default: 1000)')
+    parser.add_argument('-x', '--x-range', nargs=2, type=float, default=[1.8, 3],
+                        help='Range of enclosed mass to plot (default: [1.8, 3])')
+    parser.add_argument('-y', '--y-range', nargs=2, type=float, default=None,
+                        help='Range of log mass fractions to plot (default: None)')
+    args = parser.parse_args()
+    
+    # Loop over all supplied variables and plot the abundances for each
+    plt.figure(figsize=(10, 5))
+    for tracers in args.tracer_count:
+        for alpha in args.alphas:
+            for mass in args.masses:
+
+                # Loads the stitched data for the given parameters
+                path = f"{config.stitched_output_directory}/stitched_stir2_{run_date}_s{mass}_alpha{alpha}_n{tracers}"
+                data = pd.read_csv(path, sep='\s+')
+
+                # Plots each isotope's abundance and calculates their total mass
+                for isotope in args.isotopes:
+                    if isotope not in data.columns:
+                        print(f"{isotope} is not a valid isotope.")
+                    else:
+                        total_mass = np.sum(data[isotope] * data["density"] * data["cell_volume"]) / 1.98e33
+                        label = ""
+                        if len(args.isotopes) > 1 or (len(args.masses) == 1 and len(args.alphas) == 1 and len(args.tracer_count) == 1): label += isotope
+                        if len(args.masses) > 1: 
+                            if len(label) > 0: label += ", "
+                            label += f"m={mass}"
+                        if len(args.alphas) > 1: 
+                            if len(label) > 0: label += ", "
+                            label += f"a={alpha}"
+                        if len(args.tracer_count) > 1: 
+                            if len(label) > 0: label += ", "
+                            label += f"n={tracers}"
+                        plt.plot(data["enclosed_mass"], data[isotope], label = f"{label} (M_total={total_mass:.2e})")
+
+    plt.semilogy()
+    title = ""
+    if len(args.isotopes) == 1: title += args.isotopes[0]
+    if len(args.masses) == 1: 
+        if len(title) > 0: title += ", "
+        title += f"{args.masses[0]} Msun"
+    if len(args.alphas) == 1: 
+        if len(title) > 0: title += ", "
+        title += f"{args.alphas[0]} alpha"
+    if len(args.tracer_count) ==1: 
+        if len(title) > 0: title += ", "
+        title += f"{args.tracer_count[0]} tracers"
+
+    plt.title(f"Final Mass Fractions ({title})")
+    plt.xlabel("Mass [Msun]")
+    plt.ylabel(f"Log Mass Fraction")
+    plt.xlim(args.x_range)
+    if args.y_range is not None: plt.ylim(args.y_range)
+    plt.legend()
+    plt.savefig(f"{config.plot_directory}/{args.name[0]}.png")
