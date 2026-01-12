@@ -45,6 +45,8 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers=False, rerun_nucleo=F
     enclosed_mass = np.cumsum(stir_data['flash', 'cell_volume'].value * stir_data['gas', 'density'].value) / config.M_sun
     max_tracer_mass = enclosed_mass[np.argmin(np.abs(stir_data['gas', 'r'].value - shock_radius[-1]))]
     print("Max Tracer Mass:", max_tracer_mass)
+    print(f"Total Tracer Mass: {max_tracer_mass - min_tracer_mass}")
+    print(f"Mass Resolution: {(max_tracer_mass - min_tracer_mass) / num_tracers}")
 
     print("Loading the progenitor")
     progenitor = load_data.load_kepler_progenitor("sukhbold_2016", zams_mass)
