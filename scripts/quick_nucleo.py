@@ -56,7 +56,7 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers=False, rerun_nucleo=F
         start_time = time.time()
 
         print("Loading tracer data")
-        tracers = fb.load_save.get_tracers( # TODO: Make it so flashbang can handle custom save locations
+        tracers = fb.load_save.get_tracers( # TODO: Make it so flashbang can handle custom save locations for cached tracers
             run = f"stir2_{run_date}_s{zams_mass}_alpha{alpha}", 
             model = f"run_{zams_mass}",
             model_set = f"run_{run_date}_a{alpha}",
@@ -112,6 +112,9 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers=False, rerun_nucleo=F
 
 if __name__ == "__main__":
     
+    # Parses command line arguments so that we can post-process multiple models in sequence if desired.
+    # Note: To do this much faster when submitting jobs to a cluster, you'll want to run nucleosynthesis on each model separately
+    #       You can do this by running (and possibly modifying) the bulk_nucleo.py script.
     parser = argparse.ArgumentParser(description='Run nucleosynthesis calculations')
     parser.add_argument('-t', '--tracer-count', nargs='+', type=int, default=[100],
                         help='Number of tracers (can specify multiple values for multiple runs), default: 100')
@@ -121,10 +124,9 @@ if __name__ == "__main__":
                         help='Alpha values (can specify multiple values, default: 1.25)')
     parser.add_argument('-f', '--force-reload', action='store_true',
                         help='Forces all tracer data, nucleosynthesis, and stiching to be rerun even if there is existing usable data cached.')
-    
     args = parser.parse_args()
     
-    # Handle "all" for masses
+    # If "all" is specified, use all masses that are available from sukhbold 2016
     if args.masses[0] == "all":
         masses = np.array(["9.0", "9.25", "9.5", "9.75", "10.0", "10.25", "10.5", "10.75", "11.0", "11.25", "11.5", "11.75", 
                     "12.0", "12.25", "12.5", "12.75", "13.0", "13.1", "13.2", "13.3", "13.4", "13.5", "13.6", "13.7", 
@@ -147,12 +149,12 @@ if __name__ == "__main__":
         masses = np.array(args.masses, dtype=str)
     
     print(f"Running for masses: {masses}")
-    print(f"Running for alphas: {args.alpha}")
-    print(f"Running for num_tracers: {args.num_tracers}")
+    print(f"Running for alphas: {args.alphas}")
+    print(f"Running for num_tracers: {args.tracer_count}")
 
-    # Run nested loops for all combinations
-    for alpha in args.alpha:
-        for num_tracers in args.num_tracers:
+    # Post-process for each model requested, one by one
+    for alpha in args.alphas:
+        for num_tracers in args.tracer_count:
             for zams_mass in masses:
                 run_model(zams_mass, alpha, num_tracers, 
                          rerun_stitching=args.force_reload, 
