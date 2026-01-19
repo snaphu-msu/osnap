@@ -38,6 +38,9 @@ velocity_name = configs['velocity_name']
 default_plotted_profiles = configs['default_plotted_profiles']
 log_plots = configs['log_plots']
 
+# Default list of masses being used in nucleo calculations and plotting when the "all" option is used.
+all_masses = configs['all_masses']
+
 # Constants in CGS units
 M_sun = 1.989E33 # Mass of the sun in grams
 R_sun = 6.959E10 # Radius of the sun in centimeters
