@@ -9,6 +9,7 @@ configs = yaml.safe_load(stream)
 # File paths
 relative_paths = configs['relative_paths']
 if relative_paths:
+    main_data_directory = path.join(root_path, configs['main_data_directory'])
     progenitor_directory = path.join(root_path, configs['progenitor_directory'])
     stir_profiles_directory = path.join(root_path, configs['stir_profiles_directory'])
     stitched_output_directory = path.join(root_path, configs['stitched_output_directory'])
@@ -17,6 +18,7 @@ if relative_paths:
     plot_directory = path.join(root_path, configs['plot_directory'])
     eos_file_path = path.join(root_path, configs['eos_file_path'])
 else:
+    main_data_directory = configs['main_data_directory']
     progenitor_directory = configs['progenitor_directory']
     stir_profiles_directory = configs['stir_profiles_directory']
     stitched_output_directory = configs['stitched_output_directory']

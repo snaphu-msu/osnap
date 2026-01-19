@@ -1,5 +1,6 @@
 # Folder paths
 relative_paths: True # If false, paths need to be exact full paths. If true, they are relative to this config file's location.
+main_data_directory: "data" # Where the main data directory is located
 progenitor_directory: "data/progenitors" # Where progenitor models should be loaded from
 stir_profiles_directory: "data/stir_data" # Where the STIR profiles should be loaded from
 nucleo_results_directory: "data/nucleo_results" # Where the output from the nucleosynthesis calculations are saved
