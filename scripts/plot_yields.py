@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import argparse
 import os
+import yt
+yt.set_log_level(50)
 
 # Plot the yields for a given isotope (or set of isotopes) vs the specified variable
 if __name__ == "__main__":
@@ -34,6 +36,19 @@ if __name__ == "__main__":
             print(f"stitched_stir2_{run_date}_s{mass}_alpha{args.alpha}_n{args.tracer_count} does not exist. Skipping...")
             continue
         data = pd.read_csv(path, sep='\s+')
+
+        # TODO: Cleanup by ideally storing this as metadata in the stitched files, and then accesing that metadata here
+        base_path = f"/mnt/research/SNAPhU/STIR/run_sukhbold/run_{run_date}_a{args.alpha}/run_{mass}"
+        model_name = f"stir2_{run_date}_s{mass}_alpha{args.alpha}"
+        _, shock_radius = np.loadtxt(base_path + "/" + model_name + ".dat", unpack=True, usecols=(0, 11))
+        last_checkpoint = base_path + "/output/" + sorted([f for f in os.listdir(base_path + "/output") if "chk" in f])[-1]
+        stir_data = yt.load(last_checkpoint).all_data()
+        total_specific_energy = load_data.calculate_total_specific_energy(stir_data) + stir_data['flash', 'gpot'].value
+        enclosed_mass = np.cumsum(stir_data['flash', 'cell_volume'].value * stir_data['gas', 'density'].value) / config.M_sun
+        pns_masscut_index = np.min(np.where(total_specific_energy >= 0))
+        pns_mass = enclosed_mass[pns_masscut_index]
+        data = data[data["enclosed_mass"] > pns_mass]
+
         ejecta_mass = np.sum(data[args.isotope] * data["density"] * data["cell_volume"]) / config.M_sun
         yields = pd.concat([yields, pd.DataFrame([["STIR", float(mass), ejecta_mass]], columns=yields.columns)], ignore_index=True)
 

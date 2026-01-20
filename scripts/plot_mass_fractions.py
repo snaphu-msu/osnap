@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import argparse
 import os
+import yt
+yt.set_log_level(50)
 
 # Plot the mass fractions of the given isotopes vs enclosed mass for the requested models
 if __name__ == "__main__":
@@ -43,7 +45,20 @@ if __name__ == "__main__":
                     if isotope not in data.columns:
                         print(f"{isotope} is not a valid isotope.")
                     else:
-                        total_mass = np.sum(data[isotope] * data["density"] * data["cell_volume"]) / config.M_sun
+
+                        # TODO: Cleanup by ideally storing this as metadata in the stitched files, and then accesing that metadata here
+                        base_path = f"/mnt/research/SNAPhU/STIR/run_sukhbold/run_{run_date}_a{alpha}/run_{mass}"
+                        model_name = f"stir2_{run_date}_s{mass}_alpha{alpha}"
+                        _, shock_radius = np.loadtxt(base_path + "/" + model_name + ".dat", unpack=True, usecols=(0, 11))
+                        last_checkpoint = base_path + "/output/" + sorted([f for f in os.listdir(base_path + "/output") if "chk" in f])[-1]
+                        stir_data = yt.load(last_checkpoint).all_data()
+                        total_specific_energy = load_data.calculate_total_specific_energy(stir_data) + stir_data['flash', 'gpot'].value
+                        enclosed_mass = np.cumsum(stir_data['flash', 'cell_volume'].value * stir_data['gas', 'density'].value) / config.M_sun
+                        pns_masscut_index = np.min(np.where(total_specific_energy >= 0))
+                        pns_mass = enclosed_mass[pns_masscut_index]
+                        total_mass = np.sum(data[data["enclosed_mass"] > pns_mass][isotope] \
+                            * data[data["enclosed_mass"] > pns_mass]["density"] \
+                                * data[data["enclosed_mass"] > pns_mass]["cell_volume"]) / config.M_sun
 
                         # Build the this isotope's label
                         label = ""
