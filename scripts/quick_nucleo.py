@@ -37,7 +37,7 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers=False, rerun_nucleo=F
     # Set the minimum tracer mass as the PNS mass, which is determined as the first unbound mass element
     total_specific_energy = load_data.calculate_total_specific_energy(stir_data) + stir_data['flash', 'gpot'].value
     enclosed_mass = np.cumsum(stir_data['flash', 'cell_volume'].value * stir_data['gas', 'density'].value) / config.M_sun
-    pns_masscut_index = np.min(np.where(total_specific_energy >= 0)) - 1
+    pns_masscut_index = np.min(np.where(total_specific_energy >= 0))
     min_tracer_mass = enclosed_mass[pns_masscut_index]
     print("Min Tracer Mass:", min_tracer_mass)
 
