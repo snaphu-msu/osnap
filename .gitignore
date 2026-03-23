@@ -4,3 +4,5 @@ output/heger02_fitter/*
 progenitors/heger02/*
 *.npz
 *.npy
+osnap/__pycache__/*
+scripts/skynet_output/*

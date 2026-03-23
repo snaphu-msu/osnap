@@ -1,6 +1,3 @@
 [submodule "progs"]
 	path = progs
 	url = git@github.com:snaphu-msu/progs.git
-[submodule "nucleosynth"]
-	path = nucleosynth
-	url = git@github.com:snaphu-msu/nucleosynth.git
