@@ -1,2 +1,6 @@
 __pycache__/*
 .temp/*
+output/heger02_fitter/*
+progenitors/heger02/*
+*.npz
+*.npy
