@@ -56,9 +56,9 @@ if __name__ == "__main__":
                         enclosed_mass = np.cumsum(stir_data['flash', 'cell_volume'].value * stir_data['gas', 'density'].value) / config.M_sun
                         pns_masscut_index = np.min(np.where(total_specific_energy >= 0))
                         pns_mass = enclosed_mass[pns_masscut_index]
-                        total_mass = np.sum(data[data["enclosed_mass"] > pns_mass][isotope] \
-                            * data[data["enclosed_mass"] > pns_mass]["density"] \
-                                * data[data["enclosed_mass"] > pns_mass]["cell_volume"]) / config.M_sun
+                        print("PNS Mass:", pns_mass)
+                        data = data[data["enclosed_mass"] > pns_mass]
+                        total_mass = np.sum(data[isotope] * data["density"] * data["cell_volume"]) / config.M_sun
 
                         # Build the this isotope's label
                         label = ""

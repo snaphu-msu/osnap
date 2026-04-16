@@ -54,14 +54,14 @@ module load HDF5
 module load GSL
 
 # Activate the osnap virtual environment
-source /mnt/home/jdelker/.venv/bin/activate
+source /mnt/home/jdelker/.venv/osnap/bin/activate
 
 # Verify we're using the correct Python
 echo "Using Python: $(which python)"
 echo "Python version: $(python --version)"
 echo "Python path: $(python -c 'import sys; print(sys.executable)')"
 
-# Get number of tracers from environment variable (default to 100 if not set)
+# Get number of tracers from environment variable
 echo "Running with mass of ${MASS}, alpha of ${ALPHA}, and ${NUM_TRACERS} tracers"
 
 # Run the script

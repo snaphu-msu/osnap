@@ -53,4 +53,20 @@ def combine_data(stir, prog, stir_portion, verbose = False):
     data["xmstar"] = data["total_mass"] - data["pns_masscut"] * M_sun
     data["profiles"].insert(mass_col_index + 2, 'dq', data["profiles"]['density'] * data["profiles"]['cell_volume'] / data["xmstar"])
 
+    # Calculate the compactness parameters for various target masses
+    data["compactness_1.75"] = calculate_compactness(1.75, prog["profiles"]['enclosed_mass'].values, prog["profiles"]['r'].values)
+    data["compactness_2.0"] = calculate_compactness(2.0, prog["profiles"]['enclosed_mass'].values, prog["profiles"]['r'].values)
+    data["compactness_2.5"] = calculate_compactness(2.5, prog["profiles"]['enclosed_mass'].values, prog["profiles"]['r'].values)
+
     return data
+
+def calculate_compactness(target_mass, mass_profile, radius_profile):
+    """
+    Calculates the compactness parameter at a target mass for a given mass and radius profile.
+    Interpolates the radius for when data does not exist exactly at the target mass.
+    """
+    mass_index = np.argmin(np.where(mass_profile >= target_mass))
+    upper_mass, lower_mass = mass_profile[mass_index], mass_profile[mass_index - 1]
+    upper_radius, lower_radius = radius_profile[mass_index], radius_profile[mass_index - 1]
+    radius = lower_radius + (upper_radius - lower_radius) * (target_mass - lower_mass) / (upper_mass - lower_mass)
+    return target_mass / (radius / 1e8)
