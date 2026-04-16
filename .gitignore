@@ -2,7 +2,10 @@ __pycache__/*
 .temp/*
 output/heger02_fitter/*
 progenitors/heger02/*
+progenitors/sukhbold_2016/*
 *.npz
 *.npy
 osnap/__pycache__/*
 scripts/skynet_output/*
+*.pyc
+.DS_Store

@@ -1,10 +1,4 @@
-from . import load_data
-from . import config
-from . import plotting
-from . import stitching
-from . import save_data
-from . import tools
-from . import nucleo
+from importlib import import_module
 
 __all__ = ['load_data',
            'config',
@@ -13,4 +7,13 @@ __all__ = ['load_data',
            'save_data',
            'tools',
            'nucleo',
+           'heger02_composition',
            ]
+
+
+def __getattr__(name):
+    if name in __all__:
+        module = import_module(f"{__name__}.{name}")
+        globals()[name] = module
+        return module
+    raise AttributeError(name)
