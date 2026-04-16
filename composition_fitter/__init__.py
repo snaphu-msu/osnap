@@ -10,6 +10,7 @@ __all__ = [
     "build_artifact",
     "build_reduced_artifact",
     "compute_composition_ye",
+    "verify_holdout_model",
     "load_artifact",
     "load_reduced_network",
     "plot_sukhbold_profile_comparison",
@@ -48,6 +49,10 @@ def __getattr__(name: str):
         from .sukhbold_ye_plot import compute_composition_ye
 
         return compute_composition_ye
+    if name == "verify_holdout_model":
+        from .verification import verify_holdout_model
+
+        return verify_holdout_model
     if name == "load_artifact":
         from .heger02_dataset import load_artifact
 

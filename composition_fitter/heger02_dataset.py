@@ -6,7 +6,7 @@ import argparse
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence
 
 import numpy as np
 
@@ -25,6 +25,7 @@ DEFAULT_FULL_ARTIFACT_PATH = Path("output/heger02_fitter/heger02_artifact.npz")
 DEFAULT_TARGET_ARTIFACT_PATH = Path("output/heger02_fitter/heger02_ccsn_weak_r_cs_ba_artifact.npz")
 DEFAULT_ARTIFACT_PATH = DEFAULT_TARGET_ARTIFACT_PATH
 DEFAULT_REDUCED_ARTIFACT_PATH = DEFAULT_TARGET_ARTIFACT_PATH
+DEFAULT_TEST_PROGENITOR_NAME = "s25@presn"
 
 REQUIRED_COLUMNS = (
     "cell density",
@@ -64,28 +65,60 @@ def iter_presn_paths(source_dir: Path) -> list[Path]:
     return paths
 
 
+def scan_presn_file(path: Path | str) -> PresnSchema:
+    """Scan one Heger02 `@presn` file header and zone count."""
+
+    path = Path(path)
+    with path.open("r", encoding="utf-8") as handle:
+        next(handle)  # version line
+        columns = tuple(split_header(next(handle)))
+        zone_count = sum(1 for line in handle if line.split() and line.split()[0].rstrip(":").isdigit())
+
+    missing = [column for column in REQUIRED_COLUMNS if column not in columns]
+    if missing:
+        raise ValueError(f"{path} is missing required columns: {missing}")
+    return PresnSchema(
+        path=path,
+        columns=columns,
+        isotopes=columns[COMPOSITION_START_INDEX:],
+        zone_count=zone_count,
+    )
+
+
 def scan_presn_directory(source_dir: Path) -> list[PresnSchema]:
     """Scan headers and zone counts without building the dense artifact."""
 
     schemas: list[PresnSchema] = []
     for path in iter_presn_paths(source_dir):
-        with path.open("r", encoding="utf-8") as handle:
-            next(handle)  # version line
-            columns = tuple(split_header(next(handle)))
-            zone_count = sum(1 for line in handle if line.split() and line.split()[0].rstrip(":").isdigit())
-
-        missing = [column for column in REQUIRED_COLUMNS if column not in columns]
-        if missing:
-            raise ValueError(f"{path} is missing required columns: {missing}")
-        schemas.append(
-            PresnSchema(
-                path=path,
-                columns=columns,
-                isotopes=columns[COMPOSITION_START_INDEX:],
-                zone_count=zone_count,
-            )
-        )
+        schemas.append(scan_presn_file(path))
     return schemas
+
+
+def split_presn_schemas(
+    schemas: Sequence[PresnSchema],
+    test_progenitor_names: Sequence[str] | None,
+) -> tuple[list[PresnSchema], list[PresnSchema]]:
+    """Split Heger02 schemas by whole progenitor file name."""
+
+    if not test_progenitor_names:
+        return list(schemas), []
+
+    requested = {str(name) for name in test_progenitor_names}
+    train: list[PresnSchema] = []
+    test: list[PresnSchema] = []
+    for schema in schemas:
+        if schema.path.name in requested:
+            test.append(schema)
+        else:
+            train.append(schema)
+
+    found = {schema.path.name for schema in test}
+    missing = sorted(requested - found)
+    if missing:
+        raise ValueError(f"Requested test progenitor files were not found: {missing}")
+    if not train:
+        raise ValueError("Train/test split left no training progenitor files.")
+    return train, test
 
 
 def build_union_isotopes(schemas: Iterable[PresnSchema]) -> list[str]:
@@ -236,6 +269,24 @@ def _build_artifact_arrays(schemas: list[PresnSchema]) -> dict[str, np.ndarray]:
     return arrays
 
 
+def _add_split_metadata(
+    arrays: dict[str, np.ndarray],
+    train_schemas: Sequence[PresnSchema],
+    test_schemas: Sequence[PresnSchema],
+) -> None:
+    mode = "progenitor_holdout" if test_schemas else "none"
+    arrays.update(
+        {
+            "split_mode": np.array([mode]),
+            "split_group_key": np.array(["progenitor_file"]),
+            "split_train_progenitor_names": np.array([schema.path.name for schema in train_schemas]),
+            "split_test_progenitor_names": np.array([schema.path.name for schema in test_schemas]),
+            "split_train_zone_counts": np.array([schema.zone_count for schema in train_schemas], dtype=np.int32),
+            "split_test_zone_counts": np.array([schema.zone_count for schema in test_schemas], dtype=np.int32),
+        }
+    )
+
+
 def _reduce_artifact_arrays(
     full_arrays: dict[str, np.ndarray],
     reduced_net_path: Path | str,
@@ -282,6 +333,7 @@ def build_artifact(
     artifact_path: Path | str | None = None,
     *,
     reduced_net_path: Path | str | None = None,
+    test_progenitor_names: Sequence[str] | None = None,
 ) -> Path:
     """Parse the raw Heger02 files and write a cached ``.npz`` artifact."""
 
@@ -292,7 +344,9 @@ def build_artifact(
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
 
     schemas = scan_presn_directory(source_dir)
-    arrays = _build_artifact_arrays(schemas)
+    train_schemas, test_schemas = split_presn_schemas(schemas, test_progenitor_names)
+    arrays = _build_artifact_arrays(train_schemas)
+    _add_split_metadata(arrays, train_schemas, test_schemas)
     if reduced_net_path is not None:
         arrays = _reduce_artifact_arrays(arrays, reduced_net_path)
     np.savez_compressed(artifact_path, **arrays)
@@ -303,10 +357,16 @@ def build_reduced_artifact(
     source_dir: Path | str = DEFAULT_SOURCE_DIR,
     artifact_path: Path | str = DEFAULT_REDUCED_ARTIFACT_PATH,
     reduced_net_path: Path | str = DEFAULT_TARGET_NET_PATH,
+    test_progenitor_names: Sequence[str] | None = None,
 ) -> Path:
     """Build a target-basis artifact using the configured network file."""
 
-    return build_artifact(source_dir, artifact_path, reduced_net_path=reduced_net_path)
+    return build_artifact(
+        source_dir,
+        artifact_path,
+        reduced_net_path=reduced_net_path,
+        test_progenitor_names=test_progenitor_names,
+    )
 
 
 def load_artifact(artifact_path: Path | str = DEFAULT_ARTIFACT_PATH) -> dict[str, np.ndarray]:
@@ -337,9 +397,20 @@ def main() -> None:
         default=None,
         help="Optional target network file; if provided, a target-basis artifact is built.",
     )
+    parser.add_argument(
+        "--test-progenitor",
+        action="append",
+        default=None,
+        help="Reserve a whole '*@presn' file for test-set verification; may be passed more than once.",
+    )
     args = parser.parse_args()
 
-    artifact_path = build_artifact(args.source, args.output, reduced_net_path=args.reduced_net)
+    artifact_path = build_artifact(
+        args.source,
+        args.output,
+        reduced_net_path=args.reduced_net,
+        test_progenitor_names=args.test_progenitor,
+    )
     arrays = load_artifact(artifact_path)
     print(f"Wrote artifact: {artifact_path}")
     print(
@@ -355,6 +426,8 @@ def main() -> None:
         (10 ** arrays["feature_min"][1], 10 ** arrays["feature_max"][1]),
         "ye_range=",
         (arrays["feature_min"][2], arrays["feature_max"][2]),
+        "test_progenitors=",
+        arrays["split_test_progenitor_names"].tolist(),
     )
 
 

@@ -13,7 +13,7 @@ from scipy.sparse import csr_matrix
 
 from .isotopes import parse_isotope
 
-DEFAULT_TARGET_NET_PATH = Path("ccsn_weak_r_cs_ba.sunet")
+DEFAULT_TARGET_NET_PATH = Path("data/ccsn_weak_r_cs_ba.sunet")
 DEFAULT_REDUCED_NET_PATH = DEFAULT_TARGET_NET_PATH
 _NETWORK_ALIASES = {
     "n": "nt1",

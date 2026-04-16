@@ -4,13 +4,21 @@ from pathlib import Path
 
 import matplotlib
 import numpy as np
+import pytest
 
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 
 from composition_fitter.fitter import Heger02CompositionFitter
-from composition_fitter.heger02_dataset import build_artifact, build_reduced_artifact, load_artifact
+from composition_fitter.heger02_dataset import (
+    DEFAULT_ARTIFACT_PATH,
+    DEFAULT_SOURCE_DIR,
+    DEFAULT_TEST_PROGENITOR_NAME,
+    build_artifact,
+    build_reduced_artifact,
+    load_artifact,
+)
 from composition_fitter.reduced_network import ReducedNetwork, build_reduction_recipe, load_reduced_network, project_compositions
 from composition_fitter.sukhbold_plot import (
     DEFAULT_PLOTTED_SELECTORS as COMPARISON_PLOTTED_SELECTORS,
@@ -27,6 +35,7 @@ from composition_fitter.sukhbold_ye_plot import (
     temperature_threshold_mass,
 )
 from composition_fitter.viewer import prepare_plot_arrays, stabilize_query_to_limits
+from composition_fitter.verification import verify_holdout_model
 
 HEADER_OFFSET = 7
 HEADER_WIDTH = 25
@@ -256,6 +265,22 @@ def test_build_artifact_aligns_union_basis(tmp_path: Path) -> None:
     assert np.all(artifact["compositions"] >= 0.0)
     assert artifact["feature_matrix"].shape == (4, 3)
     assert artifact["artifact_mode"][0] == "full"
+
+
+def test_build_artifact_records_progenitor_holdout_split(tmp_path: Path) -> None:
+    source_dir = _build_mock_source_dir(tmp_path)
+    artifact_path = tmp_path / "output" / "mock_holdout_artifact.npz"
+
+    build_artifact(source_dir, artifact_path, test_progenitor_names=["mockB@presn"])
+    artifact = load_artifact(artifact_path)
+
+    assert artifact["split_mode"][0] == "progenitor_holdout"
+    assert artifact["split_group_key"][0] == "progenitor_file"
+    assert artifact["split_train_progenitor_names"].tolist() == ["mockA@presn"]
+    assert artifact["split_test_progenitor_names"].tolist() == ["mockB@presn"]
+    assert artifact["split_train_zone_counts"].tolist() == [2]
+    assert artifact["split_test_zone_counts"].tolist() == [2]
+    assert artifact["compositions"].shape == (2, 4)
 
 
 def test_predict_enforces_constraints_and_quantiles(tmp_path: Path) -> None:
@@ -519,3 +544,27 @@ def test_build_reduced_artifact_preserves_ye_and_is_queryable(tmp_path: Path) ->
     prediction = fitter.predict(2.5e5, 1.15e9, 0.60)
     ye = float(prediction.mass_fractions.astype(np.float64) @ artifact["z_over_a"].astype(np.float64))
     assert np.isclose(ye, 0.60, atol=1e-6)
+
+
+def test_default_holdout_artifact_verifies_against_actual_test_model() -> None:
+    artifact_path = Path(DEFAULT_ARTIFACT_PATH)
+    test_model_path = Path(DEFAULT_SOURCE_DIR) / DEFAULT_TEST_PROGENITOR_NAME
+    if not artifact_path.exists() or not test_model_path.exists():
+        pytest.skip("Default Heger02 artifact and held-out source model are not available.")
+
+    artifact = load_artifact(artifact_path)
+    assert artifact["split_mode"][0] == "progenitor_holdout"
+    assert artifact["split_test_progenitor_names"].tolist() == [DEFAULT_TEST_PROGENITOR_NAME]
+    assert DEFAULT_TEST_PROGENITOR_NAME not in artifact["split_train_progenitor_names"].tolist()
+
+    result = verify_holdout_model(artifact_path, source_dir=DEFAULT_SOURCE_DIR, max_zones=128)
+
+    assert result.test_model_name == DEFAULT_TEST_PROGENITOR_NAME
+    assert result.zone_count == 128
+    assert result.isotope_count == artifact["isotopes"].shape[0]
+    assert np.isfinite(result.mean_total_variation)
+    assert result.mean_total_variation < 0.05
+    assert result.p90_total_variation < 0.10
+    assert result.max_total_variation < 0.35
+    assert result.max_ye_abs_error < 2.0e-6
+    assert result.clipped_fraction == 0.0
