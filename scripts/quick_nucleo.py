@@ -5,6 +5,7 @@ import flashbang as fb
 import nucleosynth.nucleo as nuc
 import numpy as np
 import time
+import xarray as xr
 import argparse
 
 # Hide the yt output
@@ -12,6 +13,8 @@ import yt
 yt.set_log_level(50)
 
 def run_model(zams_mass, alpha, num_tracers, rerun_tracers=False, rerun_nucleo=False, rerun_stitching=False):
+
+    rerun_stitching = True
 
     # Generate paths to the different data files
     run_date = "14may19"
@@ -51,7 +54,7 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers=False, rerun_nucleo=F
     print("Loading the progenitor")
     progenitor = load_data.load_kepler_progenitor("sukhbold_2016", zams_mass)
 
-    if not(os.path.exists(nucleo_output_path)) or rerun_nucleo or rerun_stitching or rerun_tracers:
+    if not(os.path.exists(nucleo_output_path)) or rerun_nucleo or rerun_tracers:
 
         start_time = time.time()
 
@@ -64,6 +67,8 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers=False, rerun_nucleo=F
             reload = rerun_tracers,
             config = "stir"
         )
+        
+        nuc_start = time.time()
 
         print("Beginning nucleosynthesis calculations")
         output = nuc.do_nucleosynthesis(
@@ -73,10 +78,14 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers=False, rerun_nucleo=F
             domain_radius = 1e9,
             tracers = tracers,
             output_path = f"./skynet_output/{run_date}_a{alpha}_run_{zams_mass}_n{num_tracers}",
+            isotopes_file = f"{config.main_data_directory}/../ccsn_weak_r_cs_ba.sunet",#f"{config.main_data_directory}/isotopes",
             verbose = 1
         )
+        
+        print(f"Nucleosynthesis took {time.time() - nuc_start:.2f} seconds to load")
 
-        save_data.save_fixed_width(output, nucleo_output_path)
+        output.to_netcdf(nucleo_output_path)
+        #save_data.save_fixed_width(output, nucleo_output_path)
 
         # Print the time taken to run the nucleosynthesis
         time_elapsed = time.time() - start_time

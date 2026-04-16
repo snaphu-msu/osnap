@@ -2,24 +2,37 @@
 Functions for saving processed data or converting to formats readable by other programs.
 """
 
-from .load_data import *
-from .config import *
-from .plotting import *
-from .stitching import *
 import numpy as np
 import gzip
 import os
 import pandas as pd
 import warnings
+from .load_data import *
+from .config import *
+from .plotting import *
+from .stitching import *
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-def save_fixed_width(df, save_path, padding = 2):
+def save_fixed_width(df, save_path, padding=2, metadata=None):
     """
-    Save a pandas DataFrame as a fixed-width, human-readable table with optional metadata. Supports gzip when file path ends with '.gz'
-    """
+    Save a pandas DataFrame as a fixed-width, human-readable table.
+    Supports gzip when file path ends with '.gz'.
 
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Data to save.
+    save_path : str
+        Output path (use '.gz' suffix for gzip compression).
+    padding : int, optional
+        Column spacing in the table (default 2).
+    metadata : dict or None, optional
+        Optional key-value pairs to write as comment lines at the top of the file.
+        Values are converted to strings; use None to omit metadata.
+    """
     # Double-precision float formatter
-    float_fmt = lambda x: f"{np.float64(x):.16e}" if pd.notna(x) else "nan"
+    def float_fmt(x):
+        return f"{np.float64(x):.16e}" if pd.notna(x) else "nan"
 
     # Render DataFrame to fixed-width text with aligned columns
     table_text = df.to_string(
@@ -36,8 +49,15 @@ def save_fixed_width(df, save_path, padding = 2):
             return gzip.open(path, 'wt', encoding='utf-8', newline='')
         return open(path, 'w', encoding='utf-8', newline='')
 
+    lines = []
+    if metadata:
+        for k, v in metadata.items():
+            lines.append(f"# {k}: {v}")
+        lines.append("")
+    lines.append(table_text)
+
     with open_out(save_path) as f:
-        f.write(table_text + "\n")
+        f.write("\n".join(lines) + "\n")
 
     print(f"Saved data to '{save_path}'")
 

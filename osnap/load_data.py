@@ -5,11 +5,14 @@ Functions for loading and preparing data from STIR profiles, MESA progenitors, a
 from scipy.interpolate import RegularGridInterpolator
 from progs.progs import ProgModel
 from .config import *
+import gzip
+import io
 import numpy as np
 import pandas as pd
 import h5py
 import yt
 import warnings
+import xarray as xr
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 def load_mesa_template(model_name):
@@ -134,8 +137,8 @@ def load_kepler_progenitor(source, mass):
         prog["nuclear_network"] = ['neut', 'h1', 'he3', 'he4', 'c12', 'n14', 'o16', 'ne20', 'mg24', 'si28', 's32', 'ar36', 'ca40', 'ti44', 'cr48', 'fe52', 'fe54', 'ni56', 'fe56', 'fe']
 
         # TODO: Temporary measure until I figure out what to do about missing compositions
-        prog["profiles"] = prog["profiles"].assign(prot = np.zeros(prog["profiles"].shape[0]), 
-                                                  co56 = np.zeros(prog["profiles"].shape[0]), 
+        prog["profiles"] = prog["profiles"].assign(prot = np.zeros(prog["profiles"].shape[0]),
+                                                  co56 = np.zeros(prog["profiles"].shape[0]),
                                                   cr60 = np.zeros(prog["profiles"].shape[0]))
 
         # Calculates the progenitor volume, enclosed mass, and gravitational potential
@@ -150,7 +153,8 @@ def load_kepler_progenitor(source, mass):
 def load_stir_profiles(model_name, nuclear_network, stir_profile_path = None, post_proc_nuc = None, verbose = True):
     '''Reads in data from a STIR checkpoint (or plot) file, making modifications and returning it as a dataframe.'''
 
-    if verbose: print("Loading STIR checkpoint file and converting to dataframe.")
+    if verbose: 
+        print("Loading STIR checkpoint file and converting to dataframe.")
     
     # Load the STIR checking/plot data into a dataframe
     profile_path = f"{stir_profiles_directory}/{model_name}{stir_profiles_suffix}" if stir_profile_path is None else stir_profile_path
@@ -160,7 +164,8 @@ def load_stir_profiles(model_name, nuclear_network, stir_profile_path = None, po
                 ("flash", "cell_volume"), ("flash", "ener"), ("flash", "gpot")]
     stir = stir_data.to_dataframe(needed_profiles)
 
-    if verbose: print("Pulling composition from STIR data.")
+    if verbose: 
+        print("Pulling composition from STIR data.")
     
     # Calculate the enclosed mass for every zone
     enclosed_mass = np.cumsum(stir['cell_volume'].values * stir['density'].values) / M_sun
@@ -173,7 +178,8 @@ def load_stir_profiles(model_name, nuclear_network, stir_profile_path = None, po
         if ('flash', f'{nuc}') in stir_ds.field_list: 
             new_columns[nuc] = stir_data[nuc].v
         else: 
-            if verbose: print(f"{nuc} missing from the STIR profiles. Filling with 1e-99.")
+            if verbose: 
+                print(f"{nuc} missing from the STIR profiles. Filling with 1e-99.")
             new_columns[nuc] = np.ones(stir.shape[0]) * 1e-99
     
     # Add all new columns at once to avoid fragmentation
@@ -182,19 +188,26 @@ def load_stir_profiles(model_name, nuclear_network, stir_profile_path = None, po
     
     # If nucleosynthesis was post-processed and is not yet part of the stir checkpoint file, add it here
     if not(post_proc_nuc is None):
-        composition = pd.read_csv(post_proc_nuc, delim_whitespace=True)
+
+        composition = xr.load_dataset(post_proc_nuc)
+
         new_cols = {}
-        for nuc in composition.columns[1:]:
-            values = np.interp(stir['enclosed_mass'].values, composition['mass'].values, composition[nuc].values, left=1e-99, right=1e-99)
-            if nuc in stir.columns: 
-                stir[nuc] = values
+        for isotope_index in range(len(composition.coords["isotope"])):
+            isotope = composition.coords["isotope"].values[isotope_index]
+            values = np.interp(stir['enclosed_mass'].values, 
+                               composition.coords["mass"], 
+                               composition["Y"].values[:, isotope_index, -1], 
+                               left=1e-99, right=1e-99)
+            if isotope in stir.columns:
+                stir[isotope] = values
             else: 
-                new_cols[nuc] = values
-                nuclear_network.append(nuc)
+                new_cols[isotope] = values
+                nuclear_network.append(isotope)
+                
         stir = pd.concat((stir, pd.DataFrame(new_cols)), axis=1)
         if verbose: 
             print("Updating STIR data with post-processed nucleosynthesis data.")
-            print(composition.columns[1:])
+            print(composition.coords["isotope"])
 
     # Renormalize the composition mass fractions since they need to sum to exactly 1 with double precision
     for i in range(stir.shape[0]):
@@ -253,14 +266,37 @@ def load_stitched_data(file_path):
     """
     Load a stitched fixed-width file back into a DataFrame using whitespace-delimited parsing.
 
-    - Ignores metadata lines starting with '#'
-    - Uses the first non-comment line as the header
-    - Supports gzip automatically via pandas
+    - Parses metadata from comment lines written by save_fixed_width (format: '# key: value')
+    - Uses the first non-comment, non-empty line as the header
+    - Supports gzip when file path ends with '.gz'
+
+    Returns
+    -------
+    tuple of (pandas.DataFrame, dict)
+        The data table and a dict of metadata (empty if no metadata lines were present).
     """
-    
-    return pd.read_csv(
-        file_path,
+    def open_in(path):
+        if path.endswith('.gz'):
+            return gzip.open(path, 'rt', encoding='utf-8')
+        return open(path, 'r', encoding='utf-8')
+
+    metadata = {}
+    data_lines = []
+
+    with open_in(file_path) as f:
+        for line in f:
+            if line.startswith('# '):
+                part = line[2:].rstrip('\n')
+                if ': ' in part:
+                    k, v = part.split(': ', 1)
+                    metadata[k] = v
+            else:
+                data_lines.append(line)
+
+    data_block = ''.join(data_lines)
+    df = pd.read_csv(
+        io.StringIO(data_block),
         delim_whitespace=True,
-        comment='#',
         engine='python'
     )
+    return df, metadata
