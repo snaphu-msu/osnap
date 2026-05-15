@@ -1,5 +1,6 @@
-# Folder paths
 relative_paths: True # If false, paths need to be exact full paths. If true, they are relative to this config file's location.
+
+# Folder paths
 main_data_directory: "data" # Where the main data directory is located
 progenitor_directory: "data/progenitors" # Where progenitor models should be loaded from
 stir_profiles_directory: "data/stir_data" # Where the STIR profiles should be loaded from
@@ -7,6 +8,9 @@ nucleo_results_directory: "data/nucleo_results" # Where the output from the nucl
 stitched_output_directory: "data/stitched_output" # Where the stitched profiles should be saved (these combine the progenitor and STIR profiles with updated nucleosynthesis)
 mesa_export_directory: "data/mesa_ready_export" # Where the final MESA-ready files are saved
 plot_directory: "data/plots" # Where to save plots
+
+# File paths
+isotope_list_file: "data/ccsn_weak_r_cs_ba.sunet" # Path to the file containing the list of isotopes to be used in nucleosynthesis calculations
 eos_file_path: "data/SFHo.h5" # Path to the equation of state file
 
 # Optional suffixes to use at the end of file names

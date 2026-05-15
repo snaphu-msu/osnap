@@ -16,6 +16,7 @@ if relative_paths:
     nucleo_results_directory = path.join(root_path, configs['nucleo_results_directory'])
     mesa_export_directory = path.join(root_path, configs['mesa_export_directory'])
     plot_directory = path.join(root_path, configs['plot_directory'])
+    isotope_list_file = path.join(root_path, configs['isotope_list_file'])
     eos_file_path = path.join(root_path, configs['eos_file_path'])
 else:
     main_data_directory = configs['main_data_directory']
@@ -25,6 +26,7 @@ else:
     nucleo_results_directory = configs['nucleo_results_directory']
     mesa_export_directory = configs['mesa_export_directory']
     plot_directory = configs['plot_directory']
+    isotope_list_file = configs['isotope_list_file']
     eos_file_path = configs['eos_file_path']
 
 # Optional suffixes
