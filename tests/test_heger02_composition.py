@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from composition_fitter.fitter import Heger02CompositionFitter
-from osnap.heger02_composition import replace_progenitor_composition
+from composition_fitter.heger02_dataset import DEFAULT_ARTIFACT_PATH, DEFAULT_TEST_PROGENITOR_NAME, load_artifact
+from osnap.heger02_composition import (
+    DEFAULT_HEGER02_COMPOSITION_ARTIFACT_PATH,
+    replace_progenitor_composition,
+)
 
 
 def _mock_fitter() -> Heger02CompositionFitter:
@@ -41,6 +47,22 @@ def _mock_fitter() -> Heger02CompositionFitter:
         "isotopes": isotopes,
     }
     return Heger02CompositionFitter(artifact, initial_k=4)
+
+
+def test_default_artifact_path_is_rebuilt_reduced_holdout_artifact() -> None:
+    artifact_path = Path(DEFAULT_HEGER02_COMPOSITION_ARTIFACT_PATH)
+
+    assert artifact_path == Path(DEFAULT_ARTIFACT_PATH)
+    assert artifact_path == Path("output/heger02_fitter/heger02_ccsn_weak_r_cs_ba_artifact.npz")
+
+    if not artifact_path.exists():
+        pytest.skip("Default Heger02 composition artifact is not available.")
+
+    artifact = load_artifact(artifact_path)
+    assert artifact["artifact_mode"][0] == "reduced"
+    assert artifact["target_net_path"].tolist() == ["data/ccsn_weak_r_cs_ba.sunet"]
+    assert artifact["split_mode"][0] == "progenitor_holdout"
+    assert artifact["split_test_progenitor_names"].tolist() == [DEFAULT_TEST_PROGENITOR_NAME]
 
 
 def test_replace_progenitor_composition_uses_direct_ye_and_fitter_basis() -> None:

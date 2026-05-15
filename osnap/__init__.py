@@ -8,6 +8,7 @@ __all__ = ['load_data',
            'tools',
            'nucleo',
            'heger02_composition',
+           'reduced_composition',
            ]
 
 

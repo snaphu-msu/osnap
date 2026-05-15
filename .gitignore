@@ -9,3 +9,4 @@ osnap/__pycache__/*
 scripts/skynet_output/*
 *.pyc
 .DS_Store
+*.png

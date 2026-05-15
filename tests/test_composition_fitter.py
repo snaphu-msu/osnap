@@ -20,6 +20,12 @@ from composition_fitter.heger02_dataset import (
     load_artifact,
 )
 from composition_fitter.reduced_network import ReducedNetwork, build_reduction_recipe, load_reduced_network, project_compositions
+from composition_fitter.reduced_composition import repair_reduced_abundances, repair_sukhbold_profile
+from composition_fitter.reduced_composition_plot import (
+    plot_repaired_sukhbold_abundance_comparison,
+    plot_repaired_sukhbold_diagnostics,
+    plot_repaired_sukhbold_ye_comparison,
+)
 from composition_fitter.sukhbold_plot import (
     DEFAULT_PLOTTED_SELECTORS as COMPARISON_PLOTTED_SELECTORS,
     plot_sukhbold_profile_comparison,
@@ -436,6 +442,82 @@ def test_compute_composition_ye_matches_expected_weights(tmp_path: Path) -> None
         dtype=np.float64,
     )
     assert np.allclose(ye, expected)
+
+
+def test_repair_reduced_abundances_zeroes_unstable_and_merges_fe() -> None:
+    labels = ["neut", "h1", "he4", "ti44", "fe56", "Fe"]
+    abundances = np.array([[0.05, 0.15, 0.30, 0.10, 0.20, 0.20]], dtype=np.float64)
+
+    result = repair_reduced_abundances(labels, abundances, [0.50])
+    repaired_labels = result.labels.tolist()
+
+    assert repaired_labels == ["nt1", "h1", "he4", "ti44", "fe56"]
+    assert "fe" not in repaired_labels
+    ti44_index = repaired_labels.index("ti44")
+    fe56_index = repaired_labels.index("fe56")
+    assert result.original_mass_fractions[0, fe56_index] == pytest.approx(0.40)
+    assert result.mass_fractions[0, ti44_index] == pytest.approx(0.0, abs=1.0e-14)
+    assert result.diagnostics["merged_fe_mass"][0] == pytest.approx(0.20)
+    assert result.diagnostics["zeroed_unstable_mass"][0] == pytest.approx(0.10)
+    assert result.mass_fractions.sum(axis=1)[0] == pytest.approx(1.0, abs=1.0e-10)
+    assert float(result.mass_fractions[0] @ result.z_over_a) == pytest.approx(0.50, abs=1.0e-10)
+
+
+def test_repair_reduced_abundances_preserves_feasible_edited_reference() -> None:
+    labels = ["nt1", "h1", "he4", "ti44"]
+    abundances = np.array([[0.10, 0.20, 0.60, 0.10]], dtype=np.float64)
+    target_ye = (0.20 + 0.60 * 0.5) / 0.90
+
+    result = repair_reduced_abundances(labels, abundances, [target_ye])
+
+    assert np.allclose(result.mass_fractions, [[1.0 / 9.0, 2.0 / 9.0, 6.0 / 9.0, 0.0]], atol=1.0e-10)
+    assert result.diagnostics["projection_l2_delta"][0] == pytest.approx(0.0, abs=1.0e-10)
+
+
+def test_repair_reduced_abundances_rejects_invalid_values() -> None:
+    with pytest.raises(ValueError, match="negative values"):
+        repair_reduced_abundances(["h1", "he4"], [[-1.0e-3, 1.001]], [0.5])
+
+    with pytest.raises(ValueError, match="non-finite"):
+        repair_reduced_abundances(["h1", "he4"], [[np.nan, 1.0]], [0.5])
+
+
+def test_repair_sukhbold_profile_matches_file_ye_and_plots(tmp_path: Path) -> None:
+    profile = read_sukhbold_profile(_build_mock_sukhbold_profile(tmp_path))
+    result = repair_sukhbold_profile(profile)
+
+    assert result.mass_fractions.shape == profile.source_abundances.shape
+    assert np.allclose(result.mass_fractions.sum(axis=1), 1.0, atol=1.0e-10)
+    assert np.allclose(result.mass_fractions @ result.z_over_a, profile.ye, atol=1.0e-10)
+
+    ye_figure = plot_repaired_sukhbold_ye_comparison([result])
+    abundance_figure = plot_repaired_sukhbold_abundance_comparison(result)
+    diagnostics_figure = plot_repaired_sukhbold_diagnostics(result)
+
+    assert len(ye_figure.axes) == 2
+    assert len(abundance_figure.axes) == 2
+    assert len(diagnostics_figure.axes) == 3
+    assert ye_figure.axes[1].get_ylabel() == "Ye residual"
+    assert abundance_figure.axes[1].get_ylabel() == "X_repaired - X_original"
+    assert diagnostics_figure.axes[2].get_ylabel() == "|Ye residual|"
+    plt.close(ye_figure)
+    plt.close(abundance_figure)
+    plt.close(diagnostics_figure)
+
+
+def test_repair_real_sukhbold_12_profile_matches_file_ye() -> None:
+    profile_path = Path("progenitors/sukhbold_2016/s12.0_presn")
+    if not profile_path.exists():
+        pytest.skip("Sukhbold 12.0 profile is not available.")
+
+    result = repair_sukhbold_profile(read_sukhbold_profile(profile_path))
+    labels = result.labels.tolist()
+
+    assert np.max(np.abs(result.mass_fractions.sum(axis=1) - 1.0)) <= 1.0e-10
+    assert np.max(np.abs((result.mass_fractions @ result.z_over_a) - result.target_ye)) <= 1.0e-10
+    for isotope in ("ti44", "cr48", "fe52", "ni56"):
+        if isotope in labels:
+            assert np.max(result.mass_fractions[:, labels.index(isotope)]) == pytest.approx(0.0, abs=1.0e-14)
 
 
 def test_temperature_threshold_mass_returns_outermost_hot_coordinate(tmp_path: Path) -> None:
