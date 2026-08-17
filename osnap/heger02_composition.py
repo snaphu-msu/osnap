@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from composition_fitter.fitter import Heger02CompositionFitter, Prediction
-from composition_fitter.heger02_dataset import DEFAULT_ARTIFACT_PATH
+from composition_fitter.heger02_dataset import DEFAULT_ARTIFACT_PATH as DEFAULT_HEGER02_COMPOSITION_ARTIFACT_PATH
 from composition_fitter.isotopes import parse_isotope
 
 DEFAULT_YE_COLUMNS = ("ye", "Ye", "Y_e", "cell Y_e")
@@ -37,7 +37,7 @@ def replace_progenitor_composition(
     prog: dict,
     *,
     fitter: Heger02CompositionFitter | None = None,
-    artifact_path: Path | str = DEFAULT_ARTIFACT_PATH,
+    artifact_path: Path | str = DEFAULT_HEGER02_COMPOSITION_ARTIFACT_PATH,
     density_col: str = "density",
     temperature_col: str = "temp",
     ye_columns: Sequence[str] = DEFAULT_YE_COLUMNS,
@@ -84,7 +84,7 @@ def replace_dataframe_composition(
     nuclear_network: Sequence[str],
     *,
     fitter: Heger02CompositionFitter | None = None,
-    artifact_path: Path | str = DEFAULT_ARTIFACT_PATH,
+    artifact_path: Path | str = DEFAULT_HEGER02_COMPOSITION_ARTIFACT_PATH,
     density_col: str = "density",
     temperature_col: str = "temp",
     ye_columns: Sequence[str] = DEFAULT_YE_COLUMNS,
