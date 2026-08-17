@@ -27,8 +27,15 @@ if __name__ == "__main__":
 
     if args.masses[0] == "all":
         args.masses = config.all_masses
-
+         
     yields = pd.DataFrame(columns=["set", "zams_mass", args.isotopes[0], args.isotopes[1], f"{args.isotopes[0]}_error", f"{args.isotopes[1]}_error"])
+
+    if args.external_yields:
+        external_yields = pd.read_csv(
+            f'{config.main_data_directory}/{args.external_yields}', sep='\s+', 
+            usecols=["set", "zams_mass", args.isotopes[0], args.isotopes[1], f"{args.isotopes[0]}_error", f"{args.isotopes[1]}_error"])
+        yields = pd.concat([yields, external_yields], ignore_index=True)
+
     for mass in args.masses:
 
         # Load in the stitched data for the given parameters
@@ -47,26 +54,21 @@ if __name__ == "__main__":
         stir_data = yt.load(last_checkpoint).all_data()
 
         # Calculate the PNS mass and exclude it from the ejecta mass calculations
-        total_specific_energy = load_data.calculate_total_specific_energy(stir_data) + stir_data['flash', 'gpot'].value
+        total_specific_energy = load_data.calculate_total_specific_energy(stir_data["ye  "], stir_data["temp"], stir_data["density"], stir_data["velx"]) + stir_data['flash', 'gpot'].value
         enclosed_mass = np.cumsum(stir_data['flash', 'cell_volume'].value * stir_data['gas', 'density'].value) / config.M_sun
         pns_masscut_index = np.min(np.where(total_specific_energy >= 0))
         pns_mass = enclosed_mass[pns_masscut_index]
         data = data[data["enclosed_mass"] > pns_mass]
+        data = data[data["enclosed_mass"] < 3.0]
 
         # Calculate the total eject mass for the given isotopes
         ejecta_mass_1 = np.sum(data[args.isotopes[0]] * data["density"] * data["cell_volume"]) / config.M_sun
         ejecta_mass_2 = np.sum(data[args.isotopes[1]] * data["density"] * data["cell_volume"]) / config.M_sun
         yields = pd.concat([yields, pd.DataFrame([["STIR", float(mass), ejecta_mass_1, ejecta_mass_2, 0, 0]], columns=yields.columns)], ignore_index=True)
 
-    if args.external_yields:
-        external_yields = pd.read_csv(
-            f'{config.main_data_directory}/{args.external_yields}', sep='\s+', 
-            usecols=["set", "zams_mass", args.isotopes[0], args.isotopes[1], f"{args.isotopes[0]}_error", f"{args.isotopes[1]}_error"])
-        yields = pd.concat([yields, external_yields], ignore_index=True)
-
     plt.figure(figsize=(10, 5))
     sets = yields['set'].unique()
-    markers = ['x', '^', 'v', "s", "o"]
+    markers = ['^', 'v', "*", "s", "+"]
 
     min_mass = np.min(yields['zams_mass'])
     max_mass = np.max(yields['zams_mass'])

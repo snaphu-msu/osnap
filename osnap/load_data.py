@@ -196,8 +196,9 @@ def load_stir_profiles(model_name, nuclear_network, stir_profile_path = None, po
             isotope = composition.coords["isotope"].values[isotope_index]
             values = np.interp(stir['enclosed_mass'].values, 
                                composition.coords["mass"], 
-                               composition["Y"].values[:, isotope_index, -1], 
-                               left=1e-99, right=1e-99)
+                               composition["X"].values[:, isotope_index, -1], 
+                               left=0, right=0)
+            
             if isotope in stir.columns:
                 stir[isotope] = values
             else: 
@@ -223,26 +224,31 @@ def load_stir_profiles(model_name, nuclear_network, stir_profile_path = None, po
     # If using cell edge velocity, shift the STIR velocities to the cell edge as well
     if cell_edge_velocity: 
         stir[velocity_name] = shift_to_cell_edge(stir[velocity_name].values)
-    stir["ener"] = calculate_total_specific_energy(stir_data)
+    stir["ener"] = calculate_total_specific_energy(stir_data["ye  "], stir_data["temp"], stir_data["density"], stir_data["velx"])
 
     return stir
 
-def calculate_total_specific_energy(stir_data):
+def calculate_total_specific_energy(ye, temp, dens, vel):
 
     # Load the equation of state used by STIR
     EOS = h5py.File(eos_file_path, 'r')
     mif_logenergy = RegularGridInterpolator((EOS['ye'], EOS['logtemp'], EOS['logrho']), 
                                             EOS['logenergy'][:,:,:], bounds_error=False)
 
-    # Use the STIR EOS to calculate the total specific energy
-    lye = stir_data['ye  ']
-    llogtemp = np.log10(stir_data['temp'] * 8.61733326e-11)
-    llogrho = np.log10(stir_data['dens'])
-    energy = 10.0 ** mif_logenergy(np.array([lye, llogtemp, llogrho]).T)
-    llogtemp = llogtemp * 0.0 - 2.0
-    energy0 = 10.0 ** mif_logenergy(np.array([lye, llogtemp, llogrho]).T)
+    # Use the EOS to calculate the total specific energy
+    llogtemp = np.log10(temp * 8.61733326e-11)
+    llogrho = np.log10(dens)
+    energy = 10.0 ** mif_logenergy(np.array([ye, llogtemp, llogrho]).T)
+    llogtemp = llogtemp * 0.0 - 2.0 # TODO: Ask Sean to explain this line
+    energy0 = 10.0 ** mif_logenergy(np.array([ye, llogtemp, llogrho]).T)
 
-    return (0.5 * stir_data['velx'] ** 2 + (energy - energy0) * yt.units.erg / yt.units.g).v
+    ener = (0.5 * vel ** 2 + (energy - energy0) * yt.units.erg / yt.units.g).v
+    
+    # The EOS offsets its energy values by a constant energy_shift to ensure no values are negative.
+    # So, we need to offset it back down by the same amount to get the correct total specific energy.
+    ener -= EOS['energy_shift'][0]
+    
+    return ener
 
 
 def shift_to_cell_edge(profile):

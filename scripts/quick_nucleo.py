@@ -8,6 +8,7 @@ import time
 import xarray as xr
 import argparse
 import matplotlib.pyplot as plt
+import pandas as pd
 
 # Hide the yt output
 import yt
@@ -32,53 +33,71 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers = False):
         raise ValueError("Model did not explode. Nucleosynthesis cannot be calculated.")
 
     # Set the minimum tracer mass as the PNS mass, which is determined as the first unbound mass element
-    total_specific_energy = load_data.calculate_total_specific_energy(stir_data) + stir_data['flash', 'gpot'].value
+    total_specific_energy = load_data.calculate_total_specific_energy(stir_data["ye  "], stir_data["temp"], stir_data["density"], stir_data["velx"]) + stir_data['flash', 'gpot'].value
     enclosed_mass = np.cumsum(stir_data['flash', 'cell_volume'].value * stir_data['gas', 'density'].value) / config.M_sun
     pns_masscut_index = np.min(np.where(total_specific_energy >= 0))
     min_tracer_mass = enclosed_mass[pns_masscut_index]
     print("Min Tracer Mass:", min_tracer_mass)
 
     # Set the maximum tracer mass as the outer edge of the shock at the final time
-    enclosed_mass = np.cumsum(stir_data['flash', 'cell_volume'].value * stir_data['gas', 'density'].value) / config.M_sun
     max_tracer_mass = enclosed_mass[np.argmin(np.abs(stir_data['gas', 'r'].value - shock_radius[-1]))]
     print("Max Tracer Mass:", max_tracer_mass)
     print(f"Total Tracer Mass: {max_tracer_mass - min_tracer_mass}")
 
     print("Loading the progenitor")
-    progenitor = load_data.load_kepler_progenitor("sukhbold_2016", zams_mass)
     
-    # TODO: Interpolate ye_weights to reduce it's array length to the specified number of tracers
+    # TODO: Make this more generic. This is temporarily set up for only one specific mass model.
+    prog = pd.read_csv(f"{config.progenitor_directory}/sukhbold_2016/s12.0_presn_full", skiprows=3, delimiter="\s+")
+    prog = prog.rename(columns={"nt1": "n", "h1": "p", "h2": "d", "h3": "t", "luminosity": "L", "radius": "r", "velocity": "v", "temperature": "temp", "mass": "enclosed_mass"})
+    prog["enclosed_mass"] = np.cumsum(prog["enclosed_mass"]) / config.M_sun
+    prog_composition = prog.drop(columns = ["grid", "enclosed_mass", "v", "density", "temp", "pressure", "specific-entropy", "Abar", "Ye", "stability", "network"])
+    
+    # Grab the total specific energy and gravitational potential from the original progenitor data
+    # TODO: Make this more general. Also, currently have to skip the last entry cause original progenitor has one more zone somehow.
+    #       So we'll need to find some way to interpolate the progenitor data to match the STIR data, or vice versa, so that we can stitch them together properly.
+    old_progenitor = load_data.load_kepler_progenitor("sukhbold_2016", zams_mass)
+    prog["ener"] = old_progenitor["profiles"]["ener"].values[:-1]
+    prog["gpot"] = old_progenitor["profiles"]["gpot"].values[:-1]
+    
+    progenitor = {"profiles": prog }
+    
+    # Variable tracer mass, identical to mass resolution of original STIR data
     if num_tracers == None:
-        ye_weights = 1 - (np.abs(stir_data["ye  "].value - 0.5) / 0.5)
-        tracer_mass = (ye_weights / np.sum(ye_weights)) * (max_tracer_mass - min_tracer_mass)
-        mass_grid = np.cumsum(tracer_mass) + min_tracer_mass
-        print("Using variable tracer mass, total tracer count: ", len(mass_grid))
-        
+        mass_grid = enclosed_mass[np.where(enclosed_mass >= min_tracer_mass)]
+        mass_grid = mass_grid[np.where(mass_grid <= max_tracer_mass)]
+        print(f"Using variable tracer mass, with {len(mass_grid)} tracers")
+        return
+    
+    # Tracers evenly spaced in mass, with equal mass resolution across region
     else:
         mass_grid = np.linspace(min_tracer_mass, max_tracer_mass, num_tracers)
 
+    tracer_mass = np.gradient(mass_grid)
+    
+    print(f"Tracer Mass Resolution: {np.median(tracer_mass):.2e} ± {np.std(tracer_mass):.2e} M_sun")
+    
     fig, axs = plt.subplots(1, 2, figsize=(12, 5))
 
     color = 'tab:red'
-    axs[0].set_xlabel('Zone')
+    axs[0].set_xlabel('Enclosed Mass (M_sun)')
     axs[0].set_ylabel('Tracer Mass (M_sun)', color=color)
-    axs[0].plot(range(len(tracer_mass)), tracer_mass, color = color)
+    axs[0].scatter(mass_grid, tracer_mass, color = color)
     axs[0].tick_params(axis = 'y', labelcolor = color)
     #axs[0].set_title("")
 
     color = 'tab:blue'
     ax2 = axs[0].twinx()  # instantiate a second Axes that shares the same x-axis
     ax2.set_ylabel('y_e', color=color)  # we already handled the x-label with ax1
-    ax2.plot(range(len(tracer_mass)), stir_data["ye  "], color = color)
-    ax2.axhline(0.5, color = color, linestyle = "--")
+    ax2.scatter(enclosed_mass, stir_data["ye  "], color = color)
     ax2.tick_params(axis = 'y', labelcolor = color)
+    ax2.set_xlim(min_tracer_mass - 0.05, max_tracer_mass + 0.05)
     
     axs[1].hist(tracer_mass, bins=20, color='tab:blue')
     axs[1].set_xlabel('Tracer Mass (M_sun)')
     axs[1].set_ylabel('Count')
     axs[1].semilogy()
     
-    fig.suptitle(f"{np.median(tracer_mass):.2e} ± {np.std(tracer_mass):.2e} M_sun Resolution")
+    #fig.suptitle(f"{np.median(tracer_mass):.2e} ± {np.std(tracer_mass):.2e} M_sun Resolution")
     fig.tight_layout()
     plt.savefig("mass_grid.png")
     
@@ -111,12 +130,12 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers = False):
     output = nuc.do_nucleosynthesis(
         model_path = base_path, 
         stir_model = model_name, 
-        progenitor = progenitor["model"],
+        progenitor = prog_composition,
         domain_radius = 1e9,
         tracers = tracers,
-        output_path = f"./skynet_output/{run_date}_a{alpha}_run_{zams_mass}_{tracer_string}",
+        output_path = f"{config.skynet_output_directory}/{run_date}_a{alpha}_run_{zams_mass}_{tracer_string}",
         isotopes_file = f"{config.isotope_list_file}",
-        verbose = 1
+        log_level = 1
     )
     
     print(f"Nucleosynthesis took {time.time() - nuc_start:.2f} seconds to load")
@@ -127,18 +146,18 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers = False):
     time_elapsed = time.time() - start_time
     hours, rem = divmod(time_elapsed, 3600)
     minutes, seconds = divmod(rem, 60)
-    hour_string = f"{hours:.0f}" if hours >= 10 else f"0{hours}"
-    min_string = f"{minutes:.0f}" if minutes >= 10 else f"0{minutes}"
-    sec_string = f"0{seconds:.2f}" if seconds >= 10 else f"0{seconds:.2f}"
-    time_elapsed_str = f"{hour_string}:{min_string}:{sec_string}"
+    hour_string = f"{int(hours)}" if hours >= 10 else f"0{int(hours)}"
+    min_string = f"{int(minutes)}" if minutes >= 10 else f"0{int(minutes)}"
+    sec_string = f"{int(seconds)}" if seconds >= 10 else f"0{int(seconds)}"
+    time_elapsed_str = f"{hour_string}hr, {min_string} min, and {sec_string} sec"
     print("Nucleosynthesis complete!")
-    print(f"Time Taken: {time_elapsed_str}", f"(per tracer: {(time_elapsed / num_tracers):.2f}s)")
+    print(f"Time Taken: {time_elapsed_str}", f"(per tracer: {(time_elapsed / num_tracers):.2f} sec)")
 
     # Load the stir output, overwriting isotope abundances with post-processed nucleosynthesis data
     print("Loading STIR profiles w/ added nucleosynthesis data")
     stir_data = load_data.load_stir_profiles(
         model_name, 
-        progenitor["nuclear_network"], 
+        list(prog_composition.columns[1:].values), 
         stir_profile_path = last_checkpoint,
         post_proc_nuc = nucleo_output_path,
         verbose=False
@@ -166,11 +185,11 @@ if __name__ == "__main__":
     
     print(f"Running for mass: {args.mass}")
     print(f"Running for alpha: {args.alpha}")
-    print(f"Running for num_tracers: {args.tracer_count}")
+    print(f"Running for num_tracers: {args.tracer_count if args.tracer_count != None else 'variable'}")
 
     # Post-process for each model requested, one by one
     run_model(args.mass, args.alpha, args.tracer_count, rerun_tracers = args.recreate_tracers)
     
-    print(f"Completed mass {args.mass}, alpha {args.alpha}, tracers {args.tracer_count}")
+    print(f"Completed mass {args.mass}, alpha {args.alpha}, tracers {args.tracer_count if args.tracer_count != None else 'variable'}")
 
 

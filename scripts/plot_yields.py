@@ -42,7 +42,7 @@ if __name__ == "__main__":
             continue
         data = pd.read_csv(path, sep='\s+')
 
-        # TODO: Cleanup by ideally storing this as metadata in the stitched files, and then accesing that metadata here
+        # TODO: Cleanup by ideally storing this as metadata in the stitched files, and then accessing that metadata here
         base_path = f"/mnt/research/SNAPhU/STIR/run_sukhbold/run_{run_date}_a{args.alpha}/run_{mass}"
         model_name = f"stir2_{run_date}_s{mass}_alpha{args.alpha}"
         _, shock_radius = np.loadtxt(base_path + "/" + model_name + ".dat", unpack=True, usecols=(0, 11))

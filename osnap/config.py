@@ -13,6 +13,7 @@ if relative_paths:
     progenitor_directory = path.join(root_path, configs['progenitor_directory'])
     stir_profiles_directory = path.join(root_path, configs['stir_profiles_directory'])
     stitched_output_directory = path.join(root_path, configs['stitched_output_directory'])
+    skynet_output_directory = path.join(root_path, configs['skynet_output_directory'])
     nucleo_results_directory = path.join(root_path, configs['nucleo_results_directory'])
     mesa_export_directory = path.join(root_path, configs['mesa_export_directory'])
     plot_directory = path.join(root_path, configs['plot_directory'])

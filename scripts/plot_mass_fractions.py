@@ -52,11 +52,11 @@ if __name__ == "__main__":
                         _, shock_radius = np.loadtxt(base_path + "/" + model_name + ".dat", unpack=True, usecols=(0, 11))
                         last_checkpoint = base_path + "/output/" + sorted([f for f in os.listdir(base_path + "/output") if "chk" in f])[-1]
                         stir_data = yt.load(last_checkpoint).all_data()
-                        total_specific_energy = load_data.calculate_total_specific_energy(stir_data) + stir_data['flash', 'gpot'].value
+                        total_specific_energy = load_data.calculate_total_specific_energy(stir_data["ye  "], stir_data["temp"], stir_data["density"], stir_data["velx"]) + stir_data['flash', 'gpot'].value
                         enclosed_mass = np.cumsum(stir_data['flash', 'cell_volume'].value * stir_data['gas', 'density'].value) / config.M_sun
                         pns_masscut_index = np.min(np.where(total_specific_energy >= 0))
                         pns_mass = enclosed_mass[pns_masscut_index]
-                        print("PNS Mass:", pns_mass)
+                        #print("PNS Mass:", pns_mass)
                         data = data[data["enclosed_mass"] > pns_mass]
                         total_mass = np.sum(data[isotope] * data["density"] * data["cell_volume"]) / config.M_sun
 

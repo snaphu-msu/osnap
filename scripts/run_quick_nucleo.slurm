@@ -9,13 +9,13 @@
 #SBATCH --partition=general-long
 
 # Change to the scripts directory
-cd /mnt/home/jdelker/_main/projects/osnap/scripts
+cd /mnt/home/jdelker/projects/osnap/scripts
 
 # Export variables
 export FLASH_MODELS=/mnt/research/SNAPhU/STIR/run_sukhbold
-export SKYNET_OUTPUT=/mnt/home/jdelker/_main/projects/osnap/skynet_output
-export NUCLEOSYNTH=/mnt/home/jdelker/_main/tools/nucleosynth
-export PYTHONPATH=/mnt/home/jdelker/skynet_install/lib:${NUCLEOSYNTH}:/mnt/home/jdelker/_main/tools/flashbang:/mnt/home/jdelker/_main/projects/osnap:${PYTHONPATH}
+export SKYNET_OUTPUT=/mnt/home/jdelker/projects/osnap/data/skynet_output
+export NUCLEOSYNTH=/mnt/home/jdelker/tools/nucleosynth
+export PYTHONPATH=/mnt/home/jdelker/skynet_install/lib:${NUCLEOSYNTH}:/mnt/home/jdelker/tools/flashbang:/mnt/home/jdelker/projects/osnap:${PYTHONPATH}
 
 # Load modules
 module load GCCcore/12.3.0
@@ -57,13 +57,12 @@ module load GSL
 source /mnt/home/jdelker/.venv/osnap/bin/activate
 
 # Verify we're using the correct Python
-echo "Using Python: $(which python)"
 echo "Python version: $(python --version)"
 echo "Python path: $(python -c 'import sys; print(sys.executable)')"
 
 # Get number of tracers from environment variable
-echo "Running with mass of ${MASS}, alpha of ${ALPHA}, and ${NUM_TRACERS} tracers"
+echo "Running with mass of ${MASS}, alpha of ${ALPHA}, and variable tracers"
 
 # Run the script
-python quick_nucleo.py -f -t ${NUM_TRACERS} -a ${ALPHA} -m ${MASS}
+python -u quick_nucleo.py -a ${ALPHA} -m ${MASS}
 
