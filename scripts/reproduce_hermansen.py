@@ -13,11 +13,11 @@ def get_tracer_data():
     """Compiles the Hermansen tracer data into an xarray dataset."""
 
     # Gets all relevant tracer files from directory and sorts them by tracer number
-    files = sorted(os.listdir("../hermansen_code/inputs/Lagrangian_nu"), 
+    files = sorted(os.listdir("../tools/hermansen_code/inputs/Lagrangian_nu"), 
                 key = lambda x: int(x.split("tracer")[1].split(".")[0]))
 
     # Goes through each tracer file to compile the data
-    times, masses, radii, temps, densities, yes = [], [], [], [], [], []
+    times, masses, radii, temps, densities, yes, enues, enuas, fnues, fnuas = [], [], [], [], [], [], [], [], [], []
     composition = {"r": []}
     for file in files:
         
@@ -26,23 +26,28 @@ def get_tracer_data():
             continue
             
         # Reads the enclosed mass from the top of the file
-        with open(f"../hermansen_code/inputs/Lagrangian_nu/{file}", 'r') as f:
+        with open(f"../tools/hermansen_code/inputs/Lagrangian_nu/{file}", 'r') as f:
             masses.append(float(f.readline().split(" ")[3]))
 
         # Loads the time, temperature, density, radius, and electron fraction from the file
-        time, temp, dens, r, ye = np.loadtxt(f"../hermansen_code/inputs/Lagrangian_nu/{file}", 
-                                             usecols = (0, 1, 2, 3, 4), 
-                                             skiprows = 2, 
-                                             unpack = True)
+        time, temp, dens, r, ye, enue, enua, fnue, fnua = np.loadtxt(f"../tools/hermansen_code/inputs/Lagrangian_nu/{file}", 
+                                                    usecols = (0, 1, 2, 3, 4, 5, 6, 7, 8), 
+                                                    skiprows = 2, 
+                                                    unpack = True)
+        
         radii.append(r)
         temps.append(temp)
         densities.append(dens)
         yes.append(ye)
+        enues.append(enue)
+        enuas.append(enua)
+        fnues.append(fnue)
+        fnuas.append(fnua)
         times = time
         
         composition["r"].append(r[0])
         isotopes = []
-        with open(f"../hermansen_code/inputs/Lagrangian_nu/{file}.inp", 'r') as f:
+        with open(f"../tools/hermansen_code/inputs/Lagrangian_nu/{file}.inp", 'r') as f:
             line = f.readline()
             while len(line) > 0:
                 split_line = line.split(" ")
@@ -66,11 +71,15 @@ def get_tracer_data():
         "temp": (("chk", "mass"), np.array(temps).T),
         "dens": (("chk", "mass"), np.array(densities).T),
         "ye  ": (("chk", "mass"), np.array(yes).T),
+        "enue": (("chk", "mass"), np.array(enues).T),
+        "enua": (("chk", "mass"), np.array(enuas).T),
+        "fnue": (("chk", "mass"), np.array(fnues).T),
+        "fnua": (("chk", "mass"), np.array(fnuas).T) 
     }, coords = { "chk": np.arange(198), "mass": masses, "time": times })
     
     return data, composition
 
-def get_mass_fractions(file_ending, isotopes, lumped_isotopes, time):
+def get_mass_fractions(file_ending, mass_chains, time):
     
     
     # output = []
@@ -89,7 +98,6 @@ def get_mass_fractions(file_ending, isotopes, lumped_isotopes, time):
     #     output.append(isotope_mass / (max_mass - pns_mass))
         
     composition = xr.load_dataset(f"{config.nucleo_results_directory}/14may19_m12.0_a1.25_{file_ending}")
-    actual_time = composition.coords["time"].values[time]
 
     sum_X = []
     isotope_masses = np.zeros(len(composition.coords["isotope"]))
@@ -103,17 +111,16 @@ def get_mass_fractions(file_ending, isotopes, lumped_isotopes, time):
     sum_X = isotope_masses / total_mass
     
     output = []
-    for i in range(len(isotopes)):
-        isotope_index = np.argwhere(composition.coords["isotope"].values == isotopes[i])[0][0]
-        mass_frac = sum_X[isotope_index]
-        if lumped_isotopes[i] is not None:
-            additional_index = np.argwhere(composition.coords["isotope"].values == lumped_isotopes[i])[0][0]
-            mass_frac += sum_X[additional_index]
+    for chain in mass_chains:
+        mass_frac = 0
+        for isotope in chain:
+            isotope_index = np.argwhere(composition.coords["isotope"].values == isotope)[0][0]
+            mass_frac += sum_X[isotope_index]
         output.append(mass_frac)
         
-    return np.array(output), actual_time
+    return np.array(output)
 
-def process_data(base_path, model_name):
+def process_data(base_path, model_name, name):
     
     # Generate paths to the different data files
     last_checkpoint = base_path + "/output/" + sorted([f for f in os.listdir(base_path + "/output") if "chk" in f])[-1]
@@ -134,8 +141,7 @@ def process_data(base_path, model_name):
     prog["gpot"] = old_progenitor["profiles"]["gpot"].values[:-1]
     
     progenitor = {"profiles": prog }
-
-    nucleo_output_path = f"{config.nucleo_results_directory}/14may19_m12.0_a1.25_hermansen"
+    nucleo_output_path = f"{config.nucleo_results_directory}/14may19_m12.0_a1.25_hermansen{name}"
     stitched_output_path = f"{config.stitched_output_directory}/stitched_{model_name}_hermansen"
 
     print("Loading tracer data")
@@ -157,88 +163,52 @@ def process_data(base_path, model_name):
 
     output.to_netcdf(nucleo_output_path)
 
-    # # Load the stir output, overwriting isotope abundances with post-processed nucleosynthesis data
-    # print("Loading STIR profiles w/ added nucleosynthesis data")
-    # stir_data = load_data.load_stir_profiles(
-    #     model_name, 
-    #     list(prog_composition.columns[1:].values), 
-    #     stir_profile_path = last_checkpoint,
-    #     #post_proc_nuc = nucleo_output_path,
-    #     verbose=False
-    # )
-
-    # # Add the progenitor data outside the stir domain onto the stir output
-    # print("Stitching progenitor onto STIR profiles")
-    # stitched = stitching.combine_data(
-    #     stir_data, 
-    #     progenitor, 
-    #     nuclear_network = list(prog_composition.columns[1:].values),
-    #     post_proc_nuc = nucleo_output_path,
-    #     stir_portion = 0.9
-    # )
-
-    # # Save the final stitched data into it's own file.
-    # print("Saving final stitched data")
-    # save_data.save_fixed_width(stitched["profiles"], stitched_output_path)
-
-def create_plots(base_path):
+def create_plots(name):
     
-    # Specifies which isotopes will be plotted and what their values are from Hermansen and Maruf's works
-    isotopes = ["k43", "ti44", "sc47", "v48", "v49", "cr51", "mn52", "mn53", "fe55", "co56", "co57", "fe59", "ni59"]
-    isotope_labels = ["$^{43}$K", "$^{44}$Ti", "$^{47}$Sc", "$^{48}$V+$^{48}$Cr", "$^{49}$V", "$^{51}$Cr", "$^{52}$Mn", "$^{53}$Mn", "$^{55}$Fe", "$^{56}$Co$+^{56}$Ni", "$^{57}$Co$+^{57}$Ni", "$^{59}$Fe", "$^{59}$Ni"]
+    # Specifies which mass chains will be plotted and what their values are from Hermansen and Maruf's works
+    mass_chains = [["k43", "ar43"], ["ti44", "v44"], ["sc47", "ca47"], ["v48", "cr48"], ["v49", "cr49"], ["cr51", "mn51"], ["mn52", "fe52"], 
+                ["mn53", "fe53"], ["fe55", "co55"], ["co56", "ni56"], ["co57", "ni57"], ["fe59", "mn59"], ["ni59", "cu59"]]
+    chain_labels = ["$^{43}$K + $^{43}$Ar", "$^{44}$Ti + $^{44}$V", "$^{47}$Sc + $^{47}$Ca", "$^{48}$V + $^{48}$Cr", 
+                    "$^{49}$V + $^{49}$Cr", "$^{51}$Cr + $^{51}$Mn", "$^{52}$Mn + $^{52}$Fe", "$^{53}$Mn + $^{53}$Fe", 
+                    "$^{55}$Fe + $^{55}$Co", "$^{56}$Co + $^{56}$Ni", "$^{57}$Co + $^{57}$Ni", 
+                    "$^{59}$Fe + $^{59}$Mn", "$^{59}$Ni + $^{59}$Cu"]
     hermansen = np.array([1.4e-8, 3.01e-5, 6.12e-8, 9.24e-5, 6.08e-6, 1.85e-5, 0.001, 0.000107, 0.000495, 0.0875, 0.00256, 3.92e-5, 0.000162])
     maruf = np.array([1.94e-8, 3.42e-5, 6.93e-8, 9.47e-5, 4.58e-6, 1.39e-5, 8.60e-4, 9.23e-5, 4.32e-4, 9.38e-2, 3.60e-3, 4.34e-5, 1.43e-4])
-    
-    # Some isotopes are lumped together in the Hermansen data. This list specifies which isotopes to lump together.
-    additional = [None, None, None, "cr48", None, None, None, None, None, "ni56", "ni57", None, None]
-    
-    # Determines the PNS mass and total ejecta mass from the STIR data
-    #base_path = f"/mnt/research/SNAPhU/STIR/run_sukhbold/run_14may19_a1.25/run_12.0"
-    #last_checkpoint = base_path + "/output/" + sorted([f for f in os.listdir(base_path + "/output") if "chk" in f])[-1]
-    #stir_data = yt.load(last_checkpoint).all_data()
-    #total_specific_energy = load_data.calculate_total_specific_energy(stir_data["ye  "], stir_data["temp"], stir_data["density"], stir_data["velx"]) + stir_data['flash', 'gpot'].value
-    #enclosed_mass = np.cumsum(stir_data['flash', 'cell_volume'].value * stir_data['gas', 'density'].value) / config.M_sun
-    #pns_masscut_index = np.min(np.where(total_specific_energy >= 0))
-    #pns_mass = 1.4862#enclosed_mass[pns_masscut_index] 
-    #total_ejecta_mass = enclosed_mass[-1] - pns_mass # Bug: This is wrong, because this enclosed mass only goes to edge of stir domain
-
-    # Gets the mass fractions for each isotope and each set of tracers
-    #ours_200 = np.array(get_mass_fractions(pns_mass, 10.812276841926519, "n200", isotopes, additional))
-    #ours_variable = np.array(get_mass_fractions(pns_mass, 10.812276841926519, "variable", isotopes, additional))
-    #ours_hermansen = np.array(get_mass_fractions(pns_mass, 10.812276841926519, "hermansen", isotopes, additional))
 
     # Plots the mass fractions of each isotope for each set of tracers, normalized to Hermansen's values
     plt.figure(figsize=(10, 5))
     plt.rcParams['axes.axisbelow'] = True
     plt.grid(which = 'both', axis = 'both', color = 'lightgray')
     plt.axhline(y=1, color = 'black', lw = 1)
-    plt.scatter(isotopes, maruf / hermansen, marker='o', label='Maruf')
-    test_times = [-1]
-    for t in test_times:
-        result, real_t = get_mass_fractions("hermansen", isotopes, additional, t)
-        plt.scatter(isotopes, result / hermansen, marker='o', label=f'~{real_t:.0f} s')
-    plt.xlabel('Isotope', fontweight='bold', fontsize=12)
+    plt.scatter(chain_labels, maruf / hermansen, marker='o', label='Maruf')
+    
+    results = get_mass_fractions("hermansen", mass_chains, -1)
+    plt.scatter(chain_labels, results / hermansen, marker='o', label=f'John')
+        
+    plt.xlabel('Mass Chain', fontweight='bold', fontsize=12)
     plt.ylabel('X Ratio to Hermansen', fontweight='bold', fontsize=12)
-    plt.xticks(isotopes, isotope_labels, rotation=45)
-    #plt.ylim(0.1, 10)
+    plt.xticks(chain_labels, chain_labels, rotation=45)
+    plt.ylim(0.1, 10)
     plt.semilogy()
     plt.legend()
     # BUG: For some reason the below two lines cause a floating point error, but only if run immediately after process_data()
     plt.tight_layout()
-    plt.savefig(f"{config.plot_directory}/hermansen_isotope_comparison_100.png", dpi=400)
+    plt.savefig(f"{config.plot_directory}/hermansen_isotope_comparison{name}.png", dpi=400)
 
 if __name__ == "__main__":    
     
     parser = argparse.ArgumentParser(description='Run nucleosynthesis calculations')
     parser.add_argument('-p', '--plot', action='store_true', help='Create plots of the nucleosynthesis results')
+    parser.add_argument('-n', '--name', nargs=1, help='What to end the file name with')
     args = parser.parse_args()
     
     base_path = f"/mnt/research/SNAPhU/STIR/run_sukhbold/run_14may19_a1.25/run_12.0"
     model_name = f"stir2_14may19_s12.0_alpha1.25"
+    name = "_" + args.name[0] if args.name is not None else ""
 
-    if args.plot:
-        create_plots(base_path)
-    else:
-        process_data(base_path, model_name)
+    if not(args.plot):
+        process_data(base_path, model_name, name)
+        
+    create_plots(name)
         
     

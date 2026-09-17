@@ -46,20 +46,16 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers = False):
 
     print("Loading the progenitor")
     
-    # TODO: Make this more generic. This is temporarily set up for only one specific mass model.
-    prog = pd.read_csv(f"{config.progenitor_directory}/sukhbold_2016/s12.0_presn_full", skiprows=3, delimiter="\s+")
-    prog = prog.rename(columns={"nt1": "n", "h1": "p", "h2": "d", "h3": "t", "luminosity": "L", "radius": "r", "velocity": "v", "temperature": "temp", "mass": "enclosed_mass"})
-    prog["enclosed_mass"] = np.cumsum(prog["enclosed_mass"]) / config.M_sun
-    prog_composition = prog.drop(columns = ["grid", "enclosed_mass", "v", "density", "temp", "pressure", "specific-entropy", "Abar", "Ye", "stability", "network"])
-    
     # Grab the total specific energy and gravitational potential from the original progenitor data
     # TODO: Make this more general. Also, currently have to skip the last entry cause original progenitor has one more zone somehow.
     #       So we'll need to find some way to interpolate the progenitor data to match the STIR data, or vice versa, so that we can stitch them together properly.
-    old_progenitor = load_data.load_kepler_progenitor("sukhbold_2016", zams_mass)
-    prog["ener"] = old_progenitor["profiles"]["ener"].values[:-1]
-    prog["gpot"] = old_progenitor["profiles"]["gpot"].values[:-1]
+    prog = load_data.load_kepler_progenitor("sukhbold_2016", zams_mass)
+    prog["ener"] = prog["profiles"]["ener"].values[:-1]
+    prog["gpot"] = prog["profiles"]["gpot"].values[:-1]
     
     progenitor = {"profiles": prog }
+    
+    print(prog.keys())
     
     # Variable tracer mass, identical to mass resolution of original STIR data
     if num_tracers == None:
@@ -130,7 +126,7 @@ def run_model(zams_mass, alpha, num_tracers, rerun_tracers = False):
     output = nuc.do_nucleosynthesis(
         model_path = base_path, 
         stir_model = model_name, 
-        progenitor = prog_composition,
+        progenitor = progenitor,
         domain_radius = 1e9,
         tracers = tracers,
         output_path = f"{config.skynet_output_directory}/{run_date}_a{alpha}_run_{zams_mass}_{tracer_string}",

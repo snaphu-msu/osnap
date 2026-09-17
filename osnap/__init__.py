@@ -6,9 +6,7 @@ __all__ = ['load_data',
            'stitching',
            'save_data',
            'tools',
-           'nucleo',
-           'heger02_composition',
-           'reduced_composition',
+           'nucleo'
            ]
 
 

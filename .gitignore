@@ -10,3 +10,5 @@ scripts/skynet_output/*
 *.pyc
 .DS_Store
 *.png
+.venv
+.setup
