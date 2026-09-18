@@ -11,8 +11,6 @@ Assists in process of setup, configuration, and running of simulations for creat
 
 Currently only planning to support MESA.
 
-**Q: Are there any other pieces of software that create progenitors that we should support in the long run?**
-
 ### Core Collapse & Shock Propagation (supernova.py)
 Assists in setup, configuration, and running of core-collapse simulations. Currently only planning to support STIR.
 
@@ -33,7 +31,7 @@ Uses the trajectories and progenitor composition to create trajectories.
 
 It will calculate any needed data that is missing and ensure everything is in the same units.
 
-Will support at least SkyNet and WinNet.
+Will support at least SkyNet, WinNet, pynucastro.
 
 **Possibly: It will (optionally) pre-process the composition. If the progenitor composition is using a small network, it can put each isobar into it's most common isotopes.**
 
@@ -41,7 +39,7 @@ Will support at least SkyNet and WinNet.
 Creates a data file containing the final state of the system. If the shock has not propagated through the entire star, then the progenitor data will be stitched on outside the simulation domain. Includes full ejecta composition.
 
 ### Generating Light Curves (light_curves.py)
-Assists in generating light curves using SNEC and/or STELLA.
+Assists in generating light curves using SNEC, Athelas and/or STELLA.
 
 ### Generating Spectra (spectra.py)
 Assists in generating spectra using TARDIS.

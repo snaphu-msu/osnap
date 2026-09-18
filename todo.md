@@ -6,6 +6,7 @@ Things that need to be done ASAP to make the codebase far more workable.
 * **Simplify Data:** Make it so that any existing data can be loaded easily from anywhere rather than needing to all be in the same folder as the code.
 * **Implement Scripts:** Take code from many files in the scripts folder and make them an actual part of OSNAP, also ensuring they're versatile.
 * **Make it easy to load existing trajectories, like those from Hermansen.
+* Abstract Data Specification
 * **Clean-Up:** Remove outdated or unnecessary files and code.
 
 # Before Open-Source Public Release
