@@ -9,4 +9,11 @@ This is one piece to a one-dimensional supernovae simulation pipeline. It handle
 5. Ensures all variables use the MESA units and are calculated for the same positions as MESA (such as cell-center vs edge velocities).
 6. Creates a correctly-formatted .mod file to be read into MESA for shock propagation.
 
+The shared scientific database is **ODB (OSNAP database)**, available as
+`osnap.odb`. It provides grids, fields, composition, tracer histories, units, and
+numerical operations, with in-memory use and optional HDF5 persistence. See the
+[ODB developer guide](osnap/odb/README.md) for setup, API examples, native-format
+adapters, and current implementation status. ODB dependencies are listed in
+[`requirements-odb.txt`](requirements-odb.txt).
+
 If you have any questions, email John Delker at jdelker@msu.edu.
