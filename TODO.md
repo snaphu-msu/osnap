@@ -1,12 +1,19 @@
 # The Refactor
 Things that need to be done ASAP to make the codebase far more workable.
 
-* **Remove Dependencies:** Remove need for nucleosynth, flashbang, and progs by supporting their features natively. Will likely directly use some code from each.
-* **Restructure:** Clean up existing code and reorganize it to match the new design.
-* **Simplify Data:** Make it so that any existing data can be loaded easily from anywhere rather than needing to all be in the same folder as the code.
-* **Implement Scripts:** Take code from many files in the scripts folder and make them an actual part of OSNAP, also ensuring they're versatile.
-* **Make it easy to load existing trajectories, like those from Hermansen.
-* **Clean-Up:** Remove outdated or unnecessary files and code.
+* ~~Create new branch backup and clear out master branch to start fresh.~~
+* Data Format
+  * Design abstracted data format/specification with information about units, location of data (cell center vs edge), metadata, etc.
+  * Create a reader and writer for the OSNAP data format, using HDF5.
+  * Implement ability for Kepler progenitors to be read into OSNAP data format.
+  * Implement ability for STIR results to be read into OSNAP data format.
+* Trajectories
+  * Implement loading for existing trajectory data (such as from Hermansen).
+  * Implement creating trajectories from STIR checkpoints.
+* Nucleosynthesis
+  * Implement running Nucleosynthesis using SkyNet.
+* Projects
+  * Implement basic setup of projects, as well as configuring and running them.
 
 # Before Open-Source Public Release
 Things that should be done before OSNAP is released to the public, roughly in order from most important to least important.
