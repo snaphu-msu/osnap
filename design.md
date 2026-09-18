@@ -16,10 +16,15 @@ Assists in setup, configuration, and running of core-collapse simulations. Curre
 
 The progenitor will be loaded and, if necessary, converted into a format usable as an input for STIR.
 
-**Q: Should we support just running MESA all the way and skipping STIR? I think that defeats the purpose of the physically-motivated pipeline right?**
+**Q: Should we support just running MESA all the way and skipping STIR? I think that defeats the purpose of the physically-motivated pipeline right?** Yes, I think so. I.e., thermal bombs with MESA. 
 
 ### Processing Simulation Results (progenitor.py & preprocess.py)
 Loads in progenitor models and simulation results for use with later components. Will be capable of loading at least Kepler and MESA progenitors, as well as STIR results.
+
+Other stellar evolution model data types (codes):
+- GENEC (Hirschi)
+- Limongi & Chieffi 
+- Japanese code? 
 
 ### Generating Trajectories (trajectories.py)
 Creates trajectories from simulation results. 
@@ -41,8 +46,14 @@ Creates a data file containing the final state of the system. If the shock has n
 ### Generating Light Curves (light_curves.py)
 Assists in generating light curves using SNEC, Athelas and/or STELLA.
 
+https://github.com/athelas-astro/athelas
+
 ### Generating Spectra (spectra.py)
 Assists in generating spectra using TARDIS.
+
+Potential compatibility with:
+- SEDONA 
+- CMFGEN (?)
 
 ### Additional Analysis Tools (plot.py)
 Tools for creating a variety of plots to analyze the resulting data. 
