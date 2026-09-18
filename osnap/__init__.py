@@ -1,6 +1,7 @@
 from importlib import import_module
 
-__all__ = ['load_data',
+__all__ = ['odb',
+           'load_data',
            'config',
            'plotting',
            'stitching',
