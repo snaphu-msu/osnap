@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from osnap.odb import Composition, DataError, Field, RadialGrid, Series, Snapshot
+from osnap.odb_reference import Composition, DataError, Field, RadialGrid, Series, Snapshot
 
 
 @pytest.mark.parametrize("coordinate",["radius","mass"])

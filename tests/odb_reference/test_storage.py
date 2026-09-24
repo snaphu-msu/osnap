@@ -2,7 +2,7 @@ import json
 import h5py
 import numpy as np
 import pytest
-from osnap.odb import (Axis, ClosedDatasetError, Dataset, Field, FormatError, Series, Snapshot,
+from osnap.odb_reference import (Axis, ClosedDatasetError, Dataset, Field, FormatError, Series, Snapshot,
                        Trajectory, TracerSet, UnitRegistry)
 
 
@@ -69,7 +69,7 @@ def test_failed_write_does_not_replace_file(tmp_path,shell_model,monkeypatch):
     dataset=Dataset(series={"model":Series([shell_model])})
     dataset.write(path)
     before=path.read_bytes()
-    from osnap.odb import storage
+    from osnap.odb_reference import storage
     def fail(*a,**kw):
         raise RuntimeError("injected write failure")
     monkeypatch.setattr(storage,"_snapshot_write",fail)

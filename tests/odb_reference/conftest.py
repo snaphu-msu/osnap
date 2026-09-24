@@ -2,7 +2,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from osnap.odb import Composition, Field, RadialGrid, Snapshot, Species
+from osnap.odb_reference import Composition, Field, RadialGrid, Snapshot, Species
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

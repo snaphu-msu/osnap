@@ -3,7 +3,7 @@ import subprocess
 import numpy as np
 import pytest
 
-from osnap.odb import (Axis, Composition, DataError, Dataset, Dependency, Field, RadialGrid,
+from osnap.odb_reference import (Axis, Composition, DataError, Dataset, Dependency, Field, RadialGrid,
                        Series, Snapshot, Species, Trajectory, TracerSet, UnitError, UnitRegistry,
                        register_derived)
 
