@@ -1,6 +1,6 @@
 from importlib import import_module
 
-__all__ = []
+__all__ = ['config', 'info', 'odb', 'progenitor', 'trajectories', 'units', 'viz']
 
 
 def __getattr__(name):

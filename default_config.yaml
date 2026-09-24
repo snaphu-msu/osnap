@@ -1,0 +1,2 @@
+ROOT_PATH: "/mnt/home/jdelker"    # The root path prefixed to all other paths in this file
+EOS_PATH: "SFH0.h5"    # Path to the Equation of State HDF5 database file
