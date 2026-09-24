@@ -6,6 +6,16 @@ However, it is modular. Most components reflect a stage and can be used individu
 
 Each component is detailed in the sections below.
 
+### OSNAP Database (odb)
+
+`osnap.odb` is the OSNAP database (ODB), the common scientific object model for
+sharing grids, fields, composition, tracer histories, and nonspatial products
+between components. It supports in-memory operations and optional HDF5 persistence,
+with explicit units, metadata, validation, interpolation, and conservative remapping.
+It is independent of the legacy global configuration and physics dependencies.
+See the [ODB developer guide](osnap/odb/README.md) for the implemented API and
+native-format support. Migrating existing workflows onto ODB is a separate task.
+
 ### Progenitor Evolution (stellar.py)
 Assists in process of setup, configuration, and running of simulations for creating progenitor stars. 
 
@@ -88,4 +98,4 @@ Projects are meant to have a single configuration for how models should be run. 
 Each time the user wants to start a new project with different settings, they can either copy a previous project and tweak, or they can start a new project by running the `osnap create` command in the folder where they'd like the project to be stored. This will create a copy of the template project that comes with OSNAP. 
 
 #### Configuration
-Each project folder contains its own `config.yaml` file in which they will set how the process should be run, which components they will be using, which pieces of software they want to use, the paths to existing files, where results should be stored, and more.  
+Each project folder contains its own `config.yaml` file in which they will set how the process should be run, which components they will be using, which pieces of software they want to use, the paths to existing files, where results should be stored, and more.
