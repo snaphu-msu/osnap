@@ -1,0 +1,90 @@
+###############################################################################
+### GENERAL SETTINGS
+###    Settings related to how the data should be loaded.
+###############################################################################
+
+# TODO: Allow specifying when a column is in log and convert them to linear
+
+# What type of file is the progenitor? Options: 'csv', 'hdf5'
+file_type: "csv"
+
+# Is the progenitor data separated into multiple files?
+# TODO: Add support for split files
+split_files: false 
+
+# How many rows should be skipped at the top of the file?
+skiprows: 1
+
+# What delimiter is used in the CSV file? Options: 'whitespace', 'tab', ',', etc.
+delimiter: "whitespace"
+
+# What string is used in place of missing data?
+missing_data: '---'
+
+# Are zones ordered in ascending mass/radius or descending?
+zone_order: 'ascending'
+
+
+###############################################################################
+### COMPOSITION
+###    Settings related to how composition data is formatted.
+###############################################################################
+
+composition_type: 'mass fraction' # Options: 'mass fraction', 'number fraction'
+
+# What are the column names for specific particles and isotopes?
+neutrons: 'neutrons' 
+protons: 'H1'
+deuterium: ''
+tritium: ''
+
+# A list of column names for elements that are grouped together (e.g. Fe, Ni, etc.)
+element_groups: ['Fe']
+
+# A list of all column names corresponding to isotopes included in the data
+# Does not need to include any already specified above (e.g. neutrons, protons, 
+# deuterium, tritium, and anything in element_groups)
+isotopes: ['He3', 'He4', 'C12', 'N14', 'O16', 'Ne20', 'Mg24', 'Si28', 'S32', 
+           'Ar36', 'Ca40', 'Ti44', 'Cr48', 'Fe52', 'Fe54', 'Fe56']
+
+
+###############################################################################
+### COLUMN INFORMATION
+###
+###    MUST FOLLOW FORMAT: 
+###      variable: [column_name, units, location]
+###
+###    WHERE:
+###      variable: The name OSNAP uses interally.
+###      column_name: The name of the column in the data file
+###      units: The units used for that column (in astropy.units format), 
+###             leave blank if dimensionless.
+###      location: Where the value is measured. 
+###                Options include 'outer', 'center', 'average'
+###
+###    NOTE:
+###      Excepting the above composition, only columns listed below will be 
+###      loaded into the ODB file. You can include additional columns from 
+###      the source file by adding them to the list but they will be ignored
+###      by OSNAP generally.
+###
+###############################################################################
+
+# TODO: Verify all below units for kepler progenitors
+column_info:
+  cell_mass: []
+  enclosed_mass: ['cell outer total mass', 'g', 'outer']
+  radius: ['cell outer radius', 'cm', 'outer']
+  radial_velocity: ['cell outer velocity', 'cm/s', 'outer']
+  cell_volume: []
+  grav_potential: []
+  angular_velocity: ['cell angular velocity', 'rad/s', 'outer'] # TODO: Verify this is outer
+  density: ['cell density', 'g/cm^3', 'average']
+  temperature: ['cell temperature', 'K', 'average']
+  pressure: ['cell pressure', 'dyne/cm^2', 'average']
+  specific_energy: ['cell specific energy', 'erg/g', 'average']
+  specific_entropy: ['cell specific entropy', 'erg/g/K', 'average']
+  A_bar: ['cell A_bar', '', 'average']
+  Y_e: ['cell Y_e', '', 'average']
+
+
