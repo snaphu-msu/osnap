@@ -11,6 +11,7 @@ M_SUN = 1.989E33        # Mass of the sun in grams
 R_SUN = 6.959E10        # Radius of the sun in centimeters
 SIGMA_B = 5.669E-5      # Stefan-Boltzmann constant
 G = 6.67430E-8          # Gravitational constant
+K_B = 8.61733326e-11    # Boltzmann constant in MeV/K
 
 desired_units = {
     "cell_mass": "g",
@@ -25,6 +26,7 @@ desired_units = {
     "pressure": "dyne/cm^2",
     "specific_energy": "erg/g",
     "specific_entropy": "erg/g/K",
+    "total_specific_energy": "erg/g",
     "A_bar": "",
     "Y_e": ""
 }

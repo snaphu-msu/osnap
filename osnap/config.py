@@ -9,7 +9,7 @@ from os import path
 
 CONFIG = {} 
     
-def load_config(global_config = None, project_config = None):
+def load(global_config = None, project_config = None):
     """
     Loads the default configuration file, then overwrites it with any settings found in 
     the global and project config files, if they exist.
@@ -20,8 +20,10 @@ def load_config(global_config = None, project_config = None):
     """
     
     # Read default_config.yaml file from parent directory and save it as dictionary
-    with open(path.join(path.dirname(__file__), 'default_config.yaml'), 'r') as f:
+    with open(path.join(path.dirname(__file__), '../default_config.yaml'), 'r') as f:
         CONFIG = yaml.safe_load(f)
+        
+    print(CONFIG)
         
     # If global_config is provided, read it and update the config dictionary
     if global_config is not None:
@@ -34,3 +36,5 @@ def load_config(global_config = None, project_config = None):
         with open(project_config, 'r') as f:
             project_config_dict = yaml.safe_load(f)
             CONFIG.update(project_config_dict)
+            
+    return CONFIG

@@ -1,0 +1,102 @@
+###############################################################################
+### GENERAL SETTINGS
+###    Settings related to how the data should be loaded.
+###############################################################################
+
+# TODO: Allow specifying when a column is in log and convert them to linear
+
+# What type of file is it? Options: 'csv', 'hdf5'
+file_type: "hdf5"
+
+# Is the data separated into multiple files?
+# TODO: Add support for split files
+split_files: false
+
+# How many rows should be skipped at the top of the file?
+skiprows: 1
+
+# If it's a CSV file, what is the delimiter? Options: 'whitespace', 'tab', ',', etc.
+delimiter: "whitespace"
+
+# What string is used in place of missing data?
+missing_data: '---'
+
+# Are zones ordered in ascending mass/radius or descending?
+zone_order: 'ascending'
+
+
+###############################################################################
+### COMPOSITION
+###    Settings related to how composition data is formatted.
+###############################################################################
+
+composition_type: 'mass fraction' # Options: 'mass fraction', 'number fraction'
+
+# What are the column names for specific particles and isotopes?
+neutrons: '' 
+protons: ''
+deuterium: ''
+tritium: ''
+
+# A list of column names for elements that are grouped together (e.g. Fe, Ni, etc.)
+element_groups: []
+
+# A list of all column names corresponding to isotopes included in the data
+# Does not need to include any already specified above (e.g. neutrons, protons, 
+# deuterium, tritium, and anything in element_groups)
+isotopes: []
+
+
+###############################################################################
+### COLUMN INFORMATION
+###
+###    MUST FOLLOW FORMAT: 
+###      variable: [column_name, units, location]
+###
+###    WHERE:
+###      variable: The name OSNAP uses interally.
+###      column_name: The name of the column in the data file
+###      units: The units used for that column (in astropy.units format), 
+###             leave blank if dimensionless.
+###      location: Where the value is measured. 
+###                Options include 'outer', 'center', 'average'
+###
+###    NOTE:
+###      Excepting the above composition, only columns listed below will be 
+###      loaded into the ODB file. You can include additional columns from 
+###      the source file by adding them to the list but they will be ignored
+###      by OSNAP generally.
+###
+###############################################################################
+
+column_info:
+  cell_mass: []
+  enclosed_mass: []
+  radius: []
+  radial_velocity: ['velx', 'cm/s', 'average']
+  cell_volume: []
+  grav_potential: ['gpot', 'erg/g', 'average']
+  angular_velocity: []
+  density: ['dens', 'g/cm^3', 'average']
+  temperature: ['temp', 'K', 'average']
+  pressure: ['pres', 'dyne/cm^2', 'average']
+  specific_energy: ['ener', 'erg/g', 'average'] # Only includes kinetic and internal energy, add etrb for turbulence
+  specific_entropy: ['entr', 'k_B/Baryon', 'average'] 
+  A_bar: []
+  Y_e: ['ye  ', '', 'average']
+  shocked: ['shok', '', 'average']
+
+
+
+# TODO:
+# 1. Add way to specify which forms of energy are included in specific energy
+# 2. Ensure that the units for specific entropy are handled correctly (currently just a string, not an astropy unit)
+# 3. Add turbulent energy column
+# 4. Add way to specify how AMR blocks are organized / how to get to leafs (in STIR it's "node type" with 1.0 being leafs)
+# 5. Add way to specify where AMR block locations and sizes are stored (in STIR its "bounding box")
+# 6. Add code to interpret #4 and #5 to map all other data from leafs to 1D radial profiles
+# 7. Add code to interpret #5 to get the radius of each zone
+# 8. Handle Shock (maybe I should just determine this on my own instead of relying on the STIR metrics?)
+# 9. Calculate explosion energy from the data and add it to the ODB file (get energy of all unbound material, possibly ignore kinetic energy outside shock)
+
+

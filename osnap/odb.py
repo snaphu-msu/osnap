@@ -8,12 +8,12 @@
 
 import h5py
 import numpy as np
-from osnap.config import CONFIG
-from osnap import units, info
+from osnap import units, info, config
 from os import path, listdir
 import pandas as pd
 import yaml
 from datetime import datetime, timezone
+from scipy.interpolate import RegularGridInterpolator
 
 #########################################################################################
 ### Notes about what fields the ODB should contain:
@@ -31,6 +31,8 @@ from datetime import datetime, timezone
 ### spectra: (dataset containing any generated spectra from the star)
 #########################################################################################
 
+
+CONFIG = config.load()
 
 class Variable():
     """
@@ -105,32 +107,101 @@ class ODB():
             
             key = f"{group}/{dataset}"
             if key in f:
-                return f[key][:]
+                data = Variable(key, f[key][:], f[key].attrs.get("units", ""), 
+                                f[key].attrs.get("location", "average"))
+                return data
             else:
-                raise KeyError(f"Key '{key}' not found in the HDF5 file.")
+                raise KeyError(f"Key '{key}' not found in the ODB file at '{self.file_path}'.")
     
     
-    def write(self, group, dataset, values): 
+    def write(self, group, variable): 
         """
         Writes data to a field in the HDF5 file.
 
         Args:
             key (str): The key for the data field you want to write to.
-            data (array-like): The data to be written to the specified field.
+            variable (odb.Variable): The data to be written to the specified field.
         """
         
         with h5py.File(self.file_path, 'a') as f:
             
-            key = f"{group}/{dataset}"
+            key = f"{group}/{variable.name}"
             
             # If the key already exists, get rid of the old data
             if key in f:
                 del f[key]
             
             # Write the new data and update the OSNAP version
-            f.create_dataset(key, data = values)
-            f.attrs["osnap_version"] = info.osnap_version
-            f.attrs["last_updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            f.create_dataset(key, data = variable.v)
+            f[key].attrs["units"] = variable.u
+            f[key].attrs["location"] = variable.l
+            self.update_info(f)
+            
+            
+    def write_group(self, group_path, variables, attributes = {}):
+        """
+        Writes multiple variables to a group in the HDF5 file.
+
+        Args:
+            group_path (str): The group in the HDF5 file where the variables should be written.
+            variables (list of Variable): A list of Variable instances to be written.
+        """
+        
+        with h5py.File(self.file_path, 'a') as f:
+            
+            # If group already exists, get rid of the old data
+            if group_path in f:
+                del f[group_path]
+                
+            group = f.create_group(group_path)
+            
+            # Write the new data
+            for variable in variables:
+                key = f"{group_path}/{variable.name}"
+                f.create_dataset(key, data = variable.v)
+                f[key].attrs["units"] = variable.u
+                f[key].attrs["location"] = variable.l
+            
+            # Writes any specified attributes to the group
+            for attr_name, attr_value in attributes.items():
+                group.attrs[attr_name] = attr_value
+            
+            self.update_info(f, group)
+            
+    
+    def write_metadata(self, path = "", name = "", value = 0): 
+        """
+        Adds or updates an attribute to the ODB file.
+
+        Args:
+            path (str): The path in the HDF5 file where the attribute should be added.
+            name (str): The name of the attribute to add or update.
+            value (object): The value of the attribute to add or update.
+        """
+        
+        with h5py.File(self.file_path, 'a') as f:
+            
+            # If path is not empty grab the group/dataset at that path, otherwise use the root group
+            location = f[path] if path else f
+            
+            # Write the attribute and update the OSNAP version
+            location.attrs[name] = value
+            self.update_info(f)
+       
+            
+    def update_info(self, hdf5_file, group = None):
+        """
+        Updates the ODB metadata with the current OSNAP version and a timestamp of last update.
+        
+        Args:
+            hdf5_file (h5py.File): The HDF5 file object to update.
+        """
+        
+        hdf5_file.attrs["osnap_version"] = info.osnap_version
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        hdf5_file.attrs["last_updated"] = now
+        if group is not None:
+            group.attrs["last_updated"] = now
         
     
     def load_progenitor(self, progenitor_type, progenitor_path):
@@ -143,6 +214,19 @@ class ODB():
         """
         
         self.load_data("progenitor", progenitor_path, progenitor_type)
+    
+    
+    def load_collapse(self, collapse_type, collapse_path):
+        """
+        Loads the collapse data into this ODB instance.
+
+        Args:
+            collapse_type (str): Type of the collapse data (e.g., 'stir', 'mesa').
+            collapse_path (str): Path to the collapse data.
+        """
+        
+        self.load_data("profiles", collapse_path, collapse_type)
+        self.constrain_PNS()
     
     
     def load_data(self, odb_path, data_type, file_path):
@@ -222,43 +306,30 @@ class ODB():
         data = calculate_missing_quantities(data)
         data = units.correct_units(data) # DEBUG: This is just to inform us if any units are changed post-derivation
         
-        # Create or update the ODB file with the loaded data
-        with h5py.File(self.file_path, 'a') as f:
-            
-            print(f"Saving loaded data to ODB at '{odb_path}'")
-            
-            # Create (or recreate) a group for the data
-            if odb_path in f:
-                del f[odb_path]
-            group = f.create_group(odb_path)
-            
-            # Includes the data type and path as attributes for reference
-            group.attrs["type"] = data_type
-            group.attrs["file"] = file_path
-            
-            # Store the loaded data in the ODB
-            for column in data:
-                variable = data[column]
-                dataset = f.create_dataset(f"{odb_path}/{variable.name}", data = variable.values)
-                dataset.attrs["units"] = variable.units
-                dataset.attrs["location"] = variable.location
-            
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-            group.attrs["last_updated"] = now
-            f.attrs["last_updated"] = now
+        # Writes the loaded data to the ODB filee
+        print(f"Saving loaded data to ODB in group '{odb_path}'")
+        self.write_group(odb_path, list(data.values()), 
+                         attributes = {"type": data_type, "file": file_path})
     
     
-    # def constrain_PNS(self):
-    #     """
-    #     Determines the proto-neutron star's mass and radius based on current data.
-    #     """
-    #     last_checkpoint = base_path + "/output/" + sorted([f for f in os.listdir(base_path + "/output") if "chk" in f])[-1]
-    #     stir_data = yt.load(last_checkpoint).all_data()
-    #     total_specific_energy = calculate_total_specific_energy(stir_data) + stir_data['flash', 'gpot'].value
-    #     enclosed_mass = np.cumsum(stir_data['flash', 'cell_volume'].value * stir_data['gas', 'density'].value) / units.M_SUN
-    #     pns_masscut_index = np.min(np.where(total_specific_energy >= 0))
-    #     pns_mass = enclosed_mass[pns_masscut_index]
-    #     data = data[data["enclosed_mass"] > pns_mass]
+    def constrain_PNS(self):
+        """
+        Determines the proto-neutron star's mass and radius based on current data.
+        """
+        
+        # Reads relevant values from the ODB file
+        radius = self.read("profiles", "radius")
+        total_specific_energy = self.read("profiles", "total_specific_energy")
+        enclosed_mass = self.read("profiles", "enclosed_mass")
+
+        # Determines the PNS to end where matter becomes unbound (total specific energy >= 0)
+        pns_masscut_index = np.min(np.where(total_specific_energy.v >= 0))
+        pns_mass = enclosed_mass.v[pns_masscut_index]
+        pns_radius = radius.v[pns_masscut_index]
+        
+        # Writes the calculated PNS mass and radius to the ODB file as attributes
+        self.write_metadata("profiles", "pns_mass", pns_mass)
+        self.write_metadata("profiles", "pns_radius", pns_radius)
     
 
 def load_csv(file_path, definition):
@@ -288,6 +359,24 @@ def load_csv(file_path, definition):
     return csv_data
 
 
+def load_hdf5(file_path, definition):
+    """
+    Load data from an HDF5 file and return it as a DataFrame.
+    
+    Args:
+        file_path (str): The path to the HDF5 file (or folder of files) containing the data.
+    
+    Returns:
+        pd.DataFrame: A DataFrame containing the loaded data from the HDF5 file.
+    """
+    
+    # Load the HDF5 file into a pandas DataFrame
+    with h5py.File(file_path, 'r') as f:
+        data_dict = {key: f[key][:] for key in f.keys()}
+    
+    return pd.DataFrame(data_dict)
+
+
 def get_definition(data_type):
     """
     Get settings from the definition file for a data type.
@@ -312,29 +401,6 @@ def get_definition(data_type):
         all_defs = [f.split('.')[0] for f in listdir(def_dir) if f.endswith('.yaml')]
         raise ValueError(f"Definition file for data type '{data_type}' not found. "
                          + f"Please use one of the following types: {all_defs}")
-        
-# def calculate_total_specific_energy(ye, temp, dens, vel):
-
-#     # Load the equation of state used by STIR
-#     with h5py.File(CONFIG["EOS_PATH"], 'r') as EOS:
-#         mif_logenergy = RegularGridInterpolator((EOS['ye'], EOS['logtemp'], EOS['logrho']), 
-#                                                 EOS['logenergy'][:,:,:], bounds_error=False)
-#         energy_shift = EOS['energy_shift'][0]
-
-#     # Use the EOS to calculate the total specific energy
-#     llogtemp = np.log10(temp * 8.61733326e-11)
-#     llogrho = np.log10(dens)
-#     energy = 10.0 ** mif_logenergy(np.array([ye, llogtemp, llogrho]).T)
-#     llogtemp = llogtemp * 0.0 - 2.050
-#     energy0 = 10.0 ** mif_logenergy(np.array([ye, llogtemp, llogrho]).T)
-
-#     ener = (0.5 * vel ** 2 + (energy - energy0) * yt.units.erg / yt.units.g).v
-    
-#     # The EOS offsets its energy values by a constant energy_shift to ensure no values are negative.
-#     # So, we need to offset it back down by the same amount to get the correct total specific energy.
-#     ener -= energy_shift
-    
-#     return ener
 
     
 def calculate_missing_quantities(data):
@@ -382,5 +448,42 @@ def calculate_missing_quantities(data):
         outer_term = np.cumsum((data["density"].v * data["radius"].v ** 2)[::-1])[::-1] / 2
         grav_potential = -4 * np.pi * units.G * (inner_term + outer_term)
         data["grav_potential"] = Variable("grav_potential", grav_potential, "erg/g", data["radius"].l)
+    
+    # If total specific energy is missing, calculate it using and EOS and existing data
+    if "total_specific_energy" not in data:
+        data["total_specific_energy"] = calculate_total_specific_energy(data)
 
     return data
+
+
+# TODO: Fix. Currently results in all NaN values for some reason.
+def calculate_total_specific_energy(data):
+    """
+    Calculates the total specific energy for each zone in the star.
+    
+    Args:
+        data (dict): A dictionary that includes the electron fraction, temperature, density, \
+            radial velocity, and gravitational potential for each zone.
+            
+    Returns:
+        Variable: A Variable instance containing the total specific energy for each zone.
+    """
+
+    # Load the equation of state as an interpolator
+    with h5py.File(CONFIG["EOS_PATH"], 'r') as EOS:
+        logenergy = RegularGridInterpolator((EOS['ye'], EOS['logtemp'], EOS['logrho']), 
+                                                EOS['logenergy'][:,:,:], bounds_error = False)
+        
+        # The EOS offsets its energy values by a constant energy_shift to ensure no values are negative.
+        # So, we need to offset it back down by the same amount to get the correct total specific energy.
+        energy_shift = EOS['energy_shift'][0]
+
+    # Use the EOS to calculate the total specific energy
+    llogtemp = np.log10(data["temperature"].v * units.K_B)
+    llogrho = np.log10(data["density"].v)
+    energy = 10.0 ** logenergy(np.array([data["Y_e"].v, llogtemp, llogrho]).T)
+    energy0 = 10.0 ** logenergy(np.array([data["Y_e"].v, np.full_like(llogrho, -2.05), llogrho]).T)
+
+    # Calculate the total specific energy and return it as a Variable
+    ener = 0.5 * data["radial_velocity"].v ** 2 + (energy - energy0) + data["grav_potential"].v - energy_shift
+    return Variable("total_specific_energy", ener, "erg/g", data["radial_velocity"].l)
