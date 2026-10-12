@@ -246,6 +246,8 @@ class ODB():
         # Load the data using the method given in the definition file
         if definition['file_type'] == 'csv':
             loaded_data = load_csv(file_path, definition)
+        elif definition['file_type'] == 'hdf5':
+            loaded_data = load_hdf5(file_path, definition)
         else:
             raise ValueError(f"Unsupported file type '{definition['file_type']}' for data type '{data_type}'")
             
@@ -354,7 +356,8 @@ def load_csv(file_path, definition):
                            skiprows = definition['skiprows'], 
                            sep = delimiter,
                            na_values = definition['missing_data'],
-                           engine = "python")
+                           engine = "python",
+                           usecols = definition['all_columns'])
     
     return csv_data
 
@@ -370,11 +373,50 @@ def load_hdf5(file_path, definition):
         pd.DataFrame: A DataFrame containing the loaded data from the HDF5 file.
     """
     
+    data_dict = {}
+    
     # Load the HDF5 file into a pandas DataFrame
     with h5py.File(file_path, 'r') as f:
-        data_dict = {key: f[key][:] for key in f.keys()}
+        
+        leaves = []
+        
+        if definition['node_type'] != '':
+            if definition['node_type'] in f:
+                for block_index in range(len(f[definition['node_type']])):
+                    node_type = f[definition['node_type']][block_index]
+                    if node_type == 1.0:
+                        leaves.append(block_index)
+            else:
+                raise ValueError(f"Node type data '{definition['node_type']}' not found in HDF5 file at '{file_path}'")
+            
+            
+            
+        for key in f.keys():
+            if key in definition['all_columns']:
+                if len(leaves) > 0:
+                    data_dict[key] = f[key][leaves].flatten()
+                else:
+                    data_dict[key] = f[key][:].flatten()
+                    
+        if 'radius' not in definition['column_info'] or definition['column_info']['radius'] == [] \
+            or definition['column_info']['radius'][0] == '':
+            if definition['column_info']['bounding_box'] != '':
+                data_dict['radius']
+                definition['column_info']['radius'] = ['radius', definition['bounding_box_units'], 'outer']
+            else:
+                raise ValueError("There is no defined radius column, and no bounding box column to use for calculating radius.")
+            
+        
+        #for key in f.keys():
+            #print(f"{key}: {f[key].shape}")
+            
+    raise NotImplementedError("HDF5 loading is not yet implemented. Please use CSV files for now.")
+        
+    # data_map = []
+    # 
+        
     
-    return pd.DataFrame(data_dict)
+    #return pd.DataFrame(data_dict)
 
 
 def get_definition(data_type):
@@ -389,10 +431,29 @@ def get_definition(data_type):
             if the file does not exist.
     """
     
+    # Load the definition file for the specified data type
     def_path = path.join(path.dirname(__file__), f'../definitions/{data_type}.yaml')
     if path.exists(def_path):
         with open(def_path, 'r') as f:
-            return yaml.safe_load(f)
+            loaded_def = yaml.safe_load(f)
+            
+            # From the loaded definition, create a list of all column names that will be used in the ODB
+            loaded_def['all_columns'] = []
+            for col in loaded_def['column_info']:
+                if len(loaded_def['column_info'][col]) > 0:
+                    loaded_def['all_columns'].append(loaded_def['column_info'][col][0])
+                    
+            # Including lists that are not part of the column_info variable
+            loaded_def['all_columns'] += list(loaded_def['isotopes']) + list(loaded_def['element_groups'])
+            
+            # As well as single value column names
+            for col in ['node_type', 'bounding_box', 'neutrons', 'protons', 'deuterium', 'tritium']:
+                loaded_def['all_columns'].append(loaded_def[col])
+                
+            # But remove any empty strings and duplicates
+            loaded_def['all_columns'] = list(np.array([col for col in loaded_def['all_columns'] if col != '']).unique())
+            
+            return loaded_def 
         
     # If the requested definition file does not exist, 
     # raise an error and list all available data types
