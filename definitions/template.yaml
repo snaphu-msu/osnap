@@ -38,7 +38,7 @@ missing_data: ''
 
 # Is the data broken up into AMR blocks? 
 # If false, OSNAP will assume that all data is in a single block.
-use_amr: false
+uses_amr: false
 
 # The name of the dataset containing info about which blocks are leaf nodes
 # If blank, OSNAP will assume that all blocks are leaf nodes
@@ -53,8 +53,10 @@ bounding_box: ''
 # Units for the bounding box coodinates
 bounding_box_units: 'cm'
 
-# Which axis 
-block_axis: 0
+# In the bounding box dataset, assuming the second axis is the coordinates, which index cooresponds to the radial axis?
+bounding_box_radial_index: 0
+
+# In the other datasets, the first axis (0) is assumed to be block index. Which axis is the radial axis?
 radial_axis: 3
 
 

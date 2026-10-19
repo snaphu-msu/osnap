@@ -14,6 +14,8 @@ import pandas as pd
 import yaml
 from datetime import datetime, timezone
 from scipy.interpolate import RegularGridInterpolator
+import astropy.constants as const
+import astropy.units as u
 
 #########################################################################################
 ### Notes about what fields the ODB should contain:
@@ -33,45 +35,6 @@ from scipy.interpolate import RegularGridInterpolator
 
 
 CONFIG = config.load()
-
-class Variable():
-    """
-    Represents a variable in the ODB with its name, values, units, and location in the cell.
-    """
-    
-    def __init__(self, name, values, units, location = "average"):
-        """
-        Initializes a Variable instance.
-
-        Args:
-            name (str): The name of the variable.
-            values (array-like): The values associated with the variable.
-            units (str): The units of the variable.
-            location (str, optional): The location of the variable ('outer', 'center', or 'average')
-        """
-        self.name = name
-        self.values = values
-        self.units = units
-        self.location = location
-    
-    @property
-    def v(self): return self.values
-
-    @v.setter
-    def v(self, values): self.values = values
-
-    @property
-    def u(self): return self.units
-
-    @u.setter
-    def u(self, units): self.units = units
-
-    @property
-    def l(self): return self.location
-
-    @l.setter
-    def l(self, location): self.location = location
-
 
 class ODB():
     """
@@ -107,8 +70,10 @@ class ODB():
             
             key = f"{group}/{dataset}"
             if key in f:
-                data = Variable(key, f[key][:], f[key].attrs.get("units", ""), 
-                                f[key].attrs.get("location", "average"))
+                data = units.Variable(key, 
+                                      f[key][:], 
+                                      f[key].attrs.get("units", ""), 
+                                      f[key].attrs.get("location", "average"))
                 return data
             else:
                 raise KeyError(f"Key '{key}' not found in the ODB file at '{self.file_path}'.")
@@ -120,7 +85,7 @@ class ODB():
 
         Args:
             key (str): The key for the data field you want to write to.
-            variable (odb.Variable): The data to be written to the specified field.
+            variable (units.Variable): The data to be written to the specified field.
         """
         
         with h5py.File(self.file_path, 'a') as f:
@@ -144,7 +109,7 @@ class ODB():
 
         Args:
             group_path (str): The group in the HDF5 file where the variables should be written.
-            variables (list of Variable): A list of Variable instances to be written.
+            variables (list of units.Variable): A list of Variable instances to be written.
         """
         
         with h5py.File(self.file_path, 'a') as f:
@@ -271,14 +236,14 @@ class ODB():
             if name not in loaded_data.columns:
                 raise ValueError(f"Column '{name}' not found in loaded data of type '{data_type}'")
             
-            data[col] = Variable(col, loaded_data[name].to_numpy(), info[1], info[2])
+            data[col] = units.Variable(col, loaded_data[name].to_numpy(), info[1], info[2])
         
         # Adds values for neutrons, protons, deuterium, and tritium
         comp_type = definition['composition_type']
         for col in ['neutrons', 'protons', 'deuterium', 'tritium']:
             if col in definition and definition[col] != '':
                 values = loaded_data[definition[col].lower()].to_numpy()
-                data[col] = Variable(col, values, comp_type, 'average')
+                data[col] = units.Variable(col, values, comp_type, 'average')
         
         # Loads in values for all isotopes listed in the definition file
         for iso in definition['isotopes']:
@@ -287,7 +252,7 @@ class ODB():
             iso_name = f"{element}{mass_number}"
             if iso_name not in data:
                 values = loaded_data[iso.lower()].to_numpy()
-                data[iso_name] = Variable(iso_name, values, comp_type, 'average')
+                data[iso_name] = units.Variable(iso_name, values, comp_type, 'average')
             
         # Loads in values for all elements with no mass number
         # TODO: May handle these differently later
@@ -295,7 +260,7 @@ class ODB():
             element = element.lower()
             if element not in data:
                 values = loaded_data[element].to_numpy()
-                data[element] = Variable(element, values, comp_type, 'average')
+                data[element] = units.Variable(element, values, comp_type, 'average')
                 
         # Clean the data by removing any columns with all NaN values
         for col in list(data):
@@ -376,47 +341,59 @@ def load_hdf5(file_path, definition):
     data_dict = {}
     
     # Load the HDF5 file into a pandas DataFrame
+    # TODO: Finish setting this up to interpret AMR blocks
     with h5py.File(file_path, 'r') as f:
         
-        leaves = []
+        if definition['uses_amr']:
+            
+            # If no node type column was specified or found, throw an error
+            if definition['node_type'] == '' or definition['node_type'] not in f:
+                raise ValueError(f"No dataset named '{definition['node_type']}' could be found in the HDF5 file at '{file_path}'")
+            
+            # If no bounding box column was specified or found, throw an error
+            if definition['bounding_box'] == '' or definition['bounding_box'] not in f:
+                raise ValueError(f"No dataset named '{definition['bounding_box']}' could be found in the HDF5 file at '{file_path}'")
+            
+            # Create a list of the indices for blocks that are leaf nodes
+            leaves = np.where(f[definition['node_type']][:] == 1)[0]
+            if len(leaves) == 0:
+                raise ValueError(f"No leaf nodes were found in the HDF5 file at '{file_path}'")
+                        
+            # Determine the inner and outer radius of each leaf node using the bounding box
+            bounding_boxes = f[definition['bounding_box']][leaves]
+            inner_radii = bounding_boxes[:, definition['bounding_box_radial_index'], 0]
+            outer_radii = bounding_boxes[:, definition['bounding_box_radial_index'], 1]
+            
+            # Sort the leaves by their radii in ascending order
+            sort_order = np.argsort(inner_radii)
+            inner_radii = inner_radii[sort_order]
+            outer_radii = outer_radii[sort_order]
+            leaves = leaves[sort_order]
+
+            # Compile data from all specified columns in the definition file into a dictionary
+            # Skips the bounding box and node type columns
+            for key in f.keys():
+                if key in definition['all_columns']:
+                    if key != definition['bounding_box'] and key != definition['node_type']:
+                        data_dict[key] = f[key][leaves].flatten()
+            
+            # TODO: This gets the number of zones in a block by looking at temperature. May need to change this to be more general in the future.
+            #       I don't want to make zones per block part of the definition file, since it may change between models, I assume.
+            zones_per_block = f[definition['column_info']['temperature'][0]].shape[definition['radial_axis']]
+            
+            # Determine the radius of each zone
+            zone_width = (outer_radii - inner_radii) / zones_per_block
+            zone_radii = []
+            for i in range(len(inner_radii)):
+                for j in range(zones_per_block):
+                    zone_radii.append(inner_radii[i] + zone_width[i] * (j + 1))
+                
+            data_dict['radius'] = np.array(zone_radii)
+            definition['column_info']['radius'] = ['radius', definition['bounding_box_units'], 'outer']
+            
+        # TODO: Add support for non-AMR HDF5 data
         
-        if definition['node_type'] != '':
-            if definition['node_type'] in f:
-                for block_index in range(len(f[definition['node_type']])):
-                    node_type = f[definition['node_type']][block_index]
-                    if node_type == 1.0:
-                        leaves.append(block_index)
-            else:
-                raise ValueError(f"Node type data '{definition['node_type']}' not found in HDF5 file at '{file_path}'")
-            
-            
-            
-        for key in f.keys():
-            if key in definition['all_columns']:
-                if len(leaves) > 0:
-                    data_dict[key] = f[key][leaves].flatten()
-                else:
-                    data_dict[key] = f[key][:].flatten()
-                    
-        if 'radius' not in definition['column_info'] or definition['column_info']['radius'] == [] \
-            or definition['column_info']['radius'][0] == '':
-            if definition['column_info']['bounding_box'] != '':
-                data_dict['radius']
-                definition['column_info']['radius'] = ['radius', definition['bounding_box_units'], 'outer']
-            else:
-                raise ValueError("There is no defined radius column, and no bounding box column to use for calculating radius.")
-            
-        
-        #for key in f.keys():
-            #print(f"{key}: {f[key].shape}")
-            
-    raise NotImplementedError("HDF5 loading is not yet implemented. Please use CSV files for now.")
-        
-    # data_map = []
-    # 
-        
-    
-    #return pd.DataFrame(data_dict)
+    return pd.DataFrame(data_dict)
 
 
 def get_definition(data_type):
@@ -451,7 +428,7 @@ def get_definition(data_type):
                 loaded_def['all_columns'].append(loaded_def[col])
                 
             # But remove any empty strings and duplicates
-            loaded_def['all_columns'] = list(np.array([col for col in loaded_def['all_columns'] if col != '']).unique())
+            loaded_def['all_columns'] = list(set([col for col in loaded_def['all_columns'] if col != '']))
             
             return loaded_def 
         
@@ -481,7 +458,7 @@ def calculate_missing_quantities(data):
             # TODO: Temporary solution. Need to properly calculate volume of the first and last zones
             #       Will also need to account for radius location (centered vs outer) when calculating volume
             volume = np.concat(([0], (4/3) * np.pi * (data["radius"].v[1:] ** 3 - data["radius"].v[:-1] ** 3)))
-            data["cell_volume"] = Variable("cell_volume", volume, "cm^3", data["radius"].l)
+            data["cell_volume"] = units.Variable("cell_volume", volume, "cm^3", data["radius"].l)
         else:
             raise ValueError("Cannot calculate cell_volume: 'radius' is missing.")
     
@@ -493,12 +470,12 @@ def calculate_missing_quantities(data):
             cell_mass = np.diff(data["enclosed_mass"].v, prepend = data["enclosed_mass"].v[0])
         else:
             raise ValueError("Cannot calculate cell_mass: data must include either 'density' or 'enclosed_mass'")
-        data["cell_mass"] = Variable("cell_mass", cell_mass, "g", data["cell_volume"].l)
+        data["cell_mass"] = units.Variable("cell_mass", cell_mass, "g", data["cell_volume"].l)
         
     # If enclosed mass is missing, calculate it using the cell masses
     if "enclosed_mass" not in data:
         enclosed_mass = np.cumsum(data["cell_mass"])
-        data["enclosed_mass"] = Variable("enclosed_mass", enclosed_mass, "g", data["cell_mass"].l)
+        data["enclosed_mass"] = units.Variable("enclosed_mass", enclosed_mass, "g", data["cell_mass"].l)
         
     # If gravitational potential is missing, calculate it using the density and radius
     # Uses the equation for the newtonian gravitational potential of a spherically symmetric mass distribution
@@ -507,8 +484,8 @@ def calculate_missing_quantities(data):
         inner_term = np.concatenate(([0.0], np.cumsum(data["density"].v * data["radius"].v ** 3)[:-1]))
         inner_term /= 3 * data["radius"].v
         outer_term = np.cumsum((data["density"].v * data["radius"].v ** 2)[::-1])[::-1] / 2
-        grav_potential = -4 * np.pi * units.G * (inner_term + outer_term)
-        data["grav_potential"] = Variable("grav_potential", grav_potential, "erg/g", data["radius"].l)
+        grav_potential = -4 * np.pi * u.G * (inner_term + outer_term)
+        data["grav_potential"] = units.Variable("grav_potential", grav_potential, "erg/g", data["radius"].l)
     
     # If total specific energy is missing, calculate it using and EOS and existing data
     if "total_specific_energy" not in data:
@@ -518,6 +495,7 @@ def calculate_missing_quantities(data):
 
 
 # TODO: Fix. Currently results in all NaN values for some reason.
+# TODO: Units may be funky here
 def calculate_total_specific_energy(data):
     """
     Calculates the total specific energy for each zone in the star.
@@ -527,7 +505,7 @@ def calculate_total_specific_energy(data):
             radial velocity, and gravitational potential for each zone.
             
     Returns:
-        Variable: A Variable instance containing the total specific energy for each zone.
+        units.Variable: A Variable instance containing the total specific energy for each zone.
     """
 
     # Load the equation of state as an interpolator
@@ -540,11 +518,11 @@ def calculate_total_specific_energy(data):
         energy_shift = EOS['energy_shift'][0]
 
     # Use the EOS to calculate the total specific energy
-    llogtemp = np.log10(data["temperature"].v * units.K_B)
+    llogtemp = np.log10((data["temperature"] * const.k_B.to(u.MeV / u.K)).v)
     llogrho = np.log10(data["density"].v)
-    energy = 10.0 ** logenergy(np.array([data["Y_e"].v, llogtemp, llogrho]).T)
-    energy0 = 10.0 ** logenergy(np.array([data["Y_e"].v, np.full_like(llogrho, -2.05), llogrho]).T)
+    energy = 10.0 ** logenergy(np.array([data["Y_e"].v, llogtemp, llogrho]).T) * u.erg / u.g
+    energy0 = 10.0 ** logenergy(np.array([data["Y_e"].v, np.full_like(llogrho, -2.05), llogrho]).T) * u.erg / u.g
 
     # Calculate the total specific energy and return it as a Variable
-    ener = 0.5 * data["radial_velocity"].v ** 2 + (energy - energy0) + data["grav_potential"].v - energy_shift
-    return Variable("total_specific_energy", ener, "erg/g", data["radial_velocity"].l)
+    ener = 0.5 * data["radial_velocity"] ** 2 + (energy - energy0) + data["grav_potential"].v - energy_shift
+    return units.Variable("total_specific_energy", ener, "erg/g", data["radial_velocity"].l)
