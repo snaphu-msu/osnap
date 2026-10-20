@@ -30,7 +30,7 @@ desired_units = {
     "cell_volume": "cm^3",
     "grav_potential": "erg/g",
     "angular_velocity": "rad/s",
-    "density": "M_sun/cm^3",
+    "density": "g/cm^3",
     "temperature": "K",
     "pressure": "dyne/cm^2",
     "specific_energy": "erg/g",
@@ -42,16 +42,26 @@ desired_units = {
 
 
 class Variable(u.Quantity):
+    """
+    An object which stores the name, location, values and units of an ODB variable. 
+    Overrides the astropy.units.Quantity class to include name and location attributes.
     
-    def __new__(cls, name, values, units, location="average", **kwargs):
+    Attributes:
+        name (str): The name of the variable.
+        value (array-like): The values associated with the variable.
+        unit (astropy.units.Unit): The units of the variable.
+        location/loc (str): The location of the variable ('outer', 'center', or 'average'). Also accessible by 'loc'.
+    """
+    
+    def __new__(cls, name, values, units, location, **kwargs):
         """
         Initializes a Variable instance.
 
         Args:
             name (str): The name of the variable.
             values (array-like): The values associated with the variable.
-            units (str): The units of the variable.
-            location (str, optional): The location of the variable ('outer', 'center', or 'average')
+            units (str or astropy.units.Unit): The units of the variable.
+            location (str): The location of the variable ('outer', 'center', or 'average')
         """
         
         unit = u.Unit(units) if type(units) is str else units
@@ -60,24 +70,27 @@ class Variable(u.Quantity):
         obj.location = location
         return obj
     
-    @property
-    def v(self): return self.value
-
-    @property
-    def u(self): return self.unit
-
-    @property
-    def l(self): return self.location
-
-    @l.setter
-    def l(self, location): self.shift_location(self, location)
+    def to(self, *args, **kwargs):
+        result = super().to(*args, **kwargs)
+        if hasattr(self, "name"):
+            result.name = self.name
+        if hasattr(self, "location"):
+            result.location = self.location
+        return result
+    
+    to.__doc__ = ("Overrides the astropy.units.Quantity.to() method to ensure the location and \
+        name are kept during conversions.\n\n" + u.Quantity.to.__doc__)
 
     @property
     def loc(self): return self.location
 
-    @l.setter
+    @loc.setter
     def loc(self, location): self.shift_location(self, location)
+
+    @property
+    def unitstr(self): return f"{self.unit}"
     
+    # TODO: Implement shifting locations. This currently only changes the location label without changing any values.
     def shift_location(self, new_location):
         """
         Shift the location of the variable.
@@ -88,8 +101,7 @@ class Variable(u.Quantity):
         self.location = new_location
 
 
-def correct_units(
-    data):
+def correct_units(data):
     
     """
     Correct the units of the data to match the OSNAP data specification.
@@ -102,35 +114,14 @@ def correct_units(
         
         # If a desired unit is given, ensure the data is in that unit.
         if column in desired_units:
-            current_units = data[column].u
+            current_units = data[column].unit
             target_units = u.Unit(desired_units[column])
             if current_units != target_units:
                 print(f"Converting {column} from {current_units} to {target_units}.")
                 data[column] = data[column].to(target_units)
-                print(type(data[column]))
-                # data[column].values = convert(data[column].values, current_units, target_units)
-                # data[column].units = target_units
                 
         # If not, print a warning
         else:
             print(f"Warning: No units specified by OSNAP for {column}. Skipping unit correction.")
     
     return data
-
-
-def convert(values, from_units, to_units):
-    """
-    Convert data from one set of units to another.
-
-    Args:
-        values (array-like): The values of data to be converted.
-        from_units (str): The current units of the data.
-        to_units (str): The desired units for the data.
-        
-    Returns:
-        array-like: The data converted to the desired units.
-    """
-
-    current_quantity = values * u.Unit(from_units)
-    target_quantity = current_quantity.to(u.Unit(to_units))
-    return target_quantity.value

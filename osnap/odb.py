@@ -97,9 +97,9 @@ class ODB():
                 del f[key]
             
             # Write the new data and update the OSNAP version
-            f.create_dataset(key, data = variable.v)
-            f[key].attrs["units"] = variable.u
-            f[key].attrs["location"] = variable.l
+            f.create_dataset(key, data = variable.value)
+            f[key].attrs["units"] = variable.unit
+            f[key].attrs["location"] = variable.loc
             self.update_info(f)
             
             
@@ -123,9 +123,9 @@ class ODB():
             # Write the new data
             for variable in variables:
                 key = f"{group_path}/{variable.name}"
-                f.create_dataset(key, data = variable.v)
-                f[key].attrs["units"] = variable.u
-                f[key].attrs["location"] = variable.l
+                f.create_dataset(key, data = variable.value)
+                f[key].attrs["units"] = f"{variable.unit}"
+                f[key].attrs["location"] = variable.loc
             
             # Writes any specified attributes to the group
             for attr_name, attr_value in attributes.items():
@@ -264,7 +264,7 @@ class ODB():
                 
         # Clean the data by removing any columns with all NaN values
         for col in list(data):
-            if np.all(np.isnan(data[col].v)):
+            if np.all(np.isnan(data[col].value)):
                 print(f"Warning: Column '{col}' contains all NaN values and will be ignored.")
                 del data[col]
             
@@ -290,13 +290,15 @@ class ODB():
         enclosed_mass = self.read("profiles", "enclosed_mass")
 
         # Determines the PNS to end where matter becomes unbound (total specific energy >= 0)
-        pns_masscut_index = np.min(np.where(total_specific_energy.v >= 0))
-        pns_mass = enclosed_mass.v[pns_masscut_index]
-        pns_radius = radius.v[pns_masscut_index]
+        pns_masscut_index = np.min(np.where(total_specific_energy.value >= 0))
+        pns_mass = enclosed_mass.value[pns_masscut_index]
+        pns_radius = radius.value[pns_masscut_index]
         
         # Writes the calculated PNS mass and radius to the ODB file as attributes
         self.write_metadata("profiles", "pns_mass", pns_mass)
+        self.write_metadata("profiles", "pns_mass_units", enclosed_mass.unitstr)
         self.write_metadata("profiles", "pns_radius", pns_radius)
+        self.write_metadata("profiles", "pns_radius_units", radius.unitstr)
     
 
 def load_csv(file_path, definition):
@@ -457,35 +459,35 @@ def calculate_missing_quantities(data):
         if "radius" in data:
             # TODO: Temporary solution. Need to properly calculate volume of the first and last zones
             #       Will also need to account for radius location (centered vs outer) when calculating volume
-            volume = np.concat(([0], (4/3) * np.pi * (data["radius"].v[1:] ** 3 - data["radius"].v[:-1] ** 3)))
-            data["cell_volume"] = units.Variable("cell_volume", volume, "cm^3", data["radius"].l)
+            volume = np.concat(([0], (4/3) * np.pi * (data["radius"].value[1:] ** 3 - data["radius"].value[:-1] ** 3)))
+            data["cell_volume"] = units.Variable("cell_volume", volume, "cm^3", data["radius"].loc)
         else:
             raise ValueError("Cannot calculate cell_volume: 'radius' is missing.")
     
     # Tries to calcualte the cell mass using either the density and volume, or the enclosed mass
     if "cell_mass" not in data:
         if "density" in data:
-            cell_mass = data["density"].v * data["cell_volume"].v
+            cell_mass = data["density"].value * data["cell_volume"].value
         elif "enclosed_mass" in data:
-            cell_mass = np.diff(data["enclosed_mass"].v, prepend = data["enclosed_mass"].v[0])
+            cell_mass = np.diff(data["enclosed_mass"].value, prepend = data["enclosed_mass"].value[0])
         else:
             raise ValueError("Cannot calculate cell_mass: data must include either 'density' or 'enclosed_mass'")
-        data["cell_mass"] = units.Variable("cell_mass", cell_mass, "g", data["cell_volume"].l)
+        data["cell_mass"] = units.Variable("cell_mass", cell_mass, "g", data["cell_volume"].loc)
         
     # If enclosed mass is missing, calculate it using the cell masses
     if "enclosed_mass" not in data:
         enclosed_mass = np.cumsum(data["cell_mass"])
-        data["enclosed_mass"] = units.Variable("enclosed_mass", enclosed_mass, "g", data["cell_mass"].l)
+        data["enclosed_mass"] = units.Variable("enclosed_mass", enclosed_mass, "g", data["cell_mass"].loc)
         
     # If gravitational potential is missing, calculate it using the density and radius
     # Uses the equation for the newtonian gravitational potential of a spherically symmetric mass distribution
     # TODO: Possibly need to account for the location of the radius (centered vs outer)
     if "grav_potential" not in data:
-        inner_term = np.concatenate(([0.0], np.cumsum(data["density"].v * data["radius"].v ** 3)[:-1]))
-        inner_term /= 3 * data["radius"].v
-        outer_term = np.cumsum((data["density"].v * data["radius"].v ** 2)[::-1])[::-1] / 2
+        inner_term = np.concatenate(([0.0], np.cumsum(data["density"].value * data["radius"].value ** 3)[:-1]))
+        inner_term /= 3 * data["radius"].value
+        outer_term = np.cumsum((data["density"].value * data["radius"].value ** 2)[::-1])[::-1] / 2
         grav_potential = -4 * np.pi * u.G * (inner_term + outer_term)
-        data["grav_potential"] = units.Variable("grav_potential", grav_potential, "erg/g", data["radius"].l)
+        data["grav_potential"] = units.Variable("grav_potential", grav_potential, "erg/g", data["radius"].loc)
     
     # If total specific energy is missing, calculate it using and EOS and existing data
     if "total_specific_energy" not in data:
@@ -515,14 +517,14 @@ def calculate_total_specific_energy(data):
         
         # The EOS offsets its energy values by a constant energy_shift to ensure no values are negative.
         # So, we need to offset it back down by the same amount to get the correct total specific energy.
-        energy_shift = EOS['energy_shift'][0]
+        energy_shift = EOS['energy_shift'][0] * u.erg / u.g
 
     # Use the EOS to calculate the total specific energy
-    llogtemp = np.log10((data["temperature"] * const.k_B.to(u.MeV / u.K)).v)
-    llogrho = np.log10(data["density"].v)
-    energy = 10.0 ** logenergy(np.array([data["Y_e"].v, llogtemp, llogrho]).T) * u.erg / u.g
-    energy0 = 10.0 ** logenergy(np.array([data["Y_e"].v, np.full_like(llogrho, -2.05), llogrho]).T) * u.erg / u.g
+    llogtemp = np.log10((data["temperature"] * const.k_B.to(u.MeV / u.K)).value)
+    llogrho = np.log10(data["density"].value)
+    energy = 10.0 ** logenergy(np.array([data["Y_e"].value, llogtemp, llogrho]).T) * u.erg / u.g
+    energy0 = 10.0 ** logenergy(np.array([data["Y_e"].value, llogtemp * 0.0 - 2.0, llogrho]).T) * u.erg / u.g
 
     # Calculate the total specific energy and return it as a Variable
-    ener = 0.5 * data["radial_velocity"] ** 2 + (energy - energy0) + data["grav_potential"].v - energy_shift
-    return units.Variable("total_specific_energy", ener, "erg/g", data["radial_velocity"].l)
+    ener = 0.5 * data["radial_velocity"] ** 2 + (energy - energy0) + data["grav_potential"] - energy_shift
+    return units.Variable("total_specific_energy", ener, "erg/g", data["radial_velocity"].loc)
