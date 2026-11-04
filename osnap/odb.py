@@ -54,7 +54,30 @@ class ODB():
         """
         
         # Sets the path to the HDF5 file where data is stored
-        self.file_path = file_path + ".odb"
+        self.file_path = file_path
+        if not(self.file_path.endswith(".odb")):
+            self.file_path += ".odb"
+        
+    
+    def list_groups(self):
+        """Returns a list of all groups in the ODB file."""
+        
+        with h5py.File(self.file_path, 'r') as f:
+            return list(f.keys())
+        
+        
+    def list_datasets(self, group):
+        """
+        Returns a list of all datasets in a specified group in the ODB file.
+
+        Args:
+            group (str): The group in the ODB file to get datasets from.
+        """
+        
+        with h5py.File(self.file_path, 'r') as f:
+            if group in f:
+                return list(f[group].keys())
+            return None
     
     
     def read(self, group, dataset):
@@ -70,9 +93,7 @@ class ODB():
             
             key = f"{group}/{dataset}"
             if key in f:
-                data = units.Variable(key, 
-                                      f[key][:], 
-                                      f[key].attrs.get("units", ""), 
+                data = units.Variable(key, f[key][:], f[key].attrs.get("units", ""), 
                                       f[key].attrs.get("location", "average"))
                 return data
             else:
@@ -443,6 +464,7 @@ def get_definition(data_type):
                          + f"Please use one of the following types: {all_defs}")
 
     
+# TODO: Values and units are likely wrong here
 def calculate_missing_quantities(data):
     """
     Calculate any missing quantities in the data.
@@ -457,10 +479,11 @@ def calculate_missing_quantities(data):
     # Tries to calculate the cell volume if it's missing
     if "cell_volume" not in data:
         if "radius" in data:
-            # TODO: Temporary solution. Need to properly calculate volume of the first and last zones
-            #       Will also need to account for radius location (centered vs outer) when calculating volume
-            volume = np.concat(([0], (4/3) * np.pi * (data["radius"].value[1:] ** 3 - data["radius"].value[:-1] ** 3)))
-            data["cell_volume"] = units.Variable("cell_volume", volume, "cm^3", data["radius"].loc)
+            volume = (4/3) * np.pi * data["radius"] ** 3
+            volume.value[1:] = np.diff(volume.value)
+            data["cell_volume"] = volume
+            data["cell_volume"].name = "cell_volume"
+            
         else:
             raise ValueError("Cannot calculate cell_volume: 'radius' is missing.")
     
@@ -496,8 +519,6 @@ def calculate_missing_quantities(data):
     return data
 
 
-# TODO: Fix. Currently results in all NaN values for some reason.
-# TODO: Units may be funky here
 def calculate_total_specific_energy(data):
     """
     Calculates the total specific energy for each zone in the star.
