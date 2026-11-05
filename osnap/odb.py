@@ -340,12 +340,14 @@ def load_csv(file_path, definition):
         delimiter = r'\s{2,}'
     
     # Load the CSV file into a pandas DataFrame
+    wanted_cols = set(definition['all_columns'])
     csv_data = pd.read_csv(file_path, 
                            skiprows = definition['skiprows'], 
                            sep = delimiter,
                            na_values = definition['missing_data'],
                            engine = "python",
-                           usecols = definition['all_columns'])
+                           usecols = lambda name: name.strip("'") in wanted_cols)
+    csv_data = csv_data.rename(columns=lambda name: name.strip("'"))
     
     return csv_data
 
@@ -364,7 +366,6 @@ def load_hdf5(file_path, definition):
     data_dict = {}
     
     # Load the HDF5 file into a pandas DataFrame
-    # TODO: Finish setting this up to interpret AMR blocks
     with h5py.File(file_path, 'r') as f:
         
         if definition['uses_amr']:
@@ -401,7 +402,7 @@ def load_hdf5(file_path, definition):
                         data_dict[key] = f[key][leaves].flatten()
             
             # TODO: This gets the number of zones in a block by looking at temperature. May need to change this to be more general in the future.
-            #       I don't want to make zones per block part of the definition file, since it may change between models, I assume.
+            #       I don't want to make zones per block part of the definition file, since it may change between models.
             zones_per_block = f[definition['column_info']['temperature'][0]].shape[definition['radial_axis']]
             
             # Determine the radius of each zone
@@ -431,11 +432,17 @@ def get_definition(data_type):
             if the file does not exist.
     """
     
+    # First, load the template as a base so that we have default values for every setting
+    template_path = path.join(path.dirname(__file__), f'../definitions/template.yaml')
+    if path.exists(template_path):
+        with open(template_path, 'r') as f:
+            loaded_def = yaml.safe_load(f)
+    
     # Load the definition file for the specified data type
     def_path = path.join(path.dirname(__file__), f'../definitions/{data_type}.yaml')
     if path.exists(def_path):
         with open(def_path, 'r') as f:
-            loaded_def = yaml.safe_load(f)
+            loaded_def.update(yaml.safe_load(f))
             
             # From the loaded definition, create a list of all column names that will be used in the ODB
             loaded_def['all_columns'] = []
@@ -445,6 +452,8 @@ def get_definition(data_type):
                     
             # Including lists that are not part of the column_info variable
             loaded_def['all_columns'] += list(loaded_def['isotopes']) + list(loaded_def['element_groups'])
+            
+            print(loaded_def['all_columns'])
             
             # As well as single value column names
             for col in ['node_type', 'bounding_box', 'neutrons', 'protons', 'deuterium', 'tritium']:
@@ -464,7 +473,6 @@ def get_definition(data_type):
                          + f"Please use one of the following types: {all_defs}")
 
     
-# TODO: Values and units are likely wrong here
 def calculate_missing_quantities(data):
     """
     Calculate any missing quantities in the data.
@@ -487,30 +495,34 @@ def calculate_missing_quantities(data):
         else:
             raise ValueError("Cannot calculate cell_volume: 'radius' is missing.")
     
-    # Tries to calcualte the cell mass using either the density and volume, or the enclosed mass
+    # Tries to calculate the cell mass using either the density and volume, or the enclosed mass
     if "cell_mass" not in data:
         if "density" in data:
-            cell_mass = data["density"].value * data["cell_volume"].value
+            cell_mass = data["density"] * data["cell_volume"]
+            cell_mass.loc = data["cell_volume"].loc
         elif "enclosed_mass" in data:
-            cell_mass = np.diff(data["enclosed_mass"].value, prepend = data["enclosed_mass"].value[0])
+            cell_mass = data["enclosed_mass"] - np.concatenate(([0.0], data["enclosed_mass"].value[:-1]))
         else:
             raise ValueError("Cannot calculate cell_mass: data must include either 'density' or 'enclosed_mass'")
-        data["cell_mass"] = units.Variable("cell_mass", cell_mass, "g", data["cell_volume"].loc)
+        cell_mass.name = "cell_mass"
+        data["cell_mass"] = cell_mass
         
     # If enclosed mass is missing, calculate it using the cell masses
     if "enclosed_mass" not in data:
         enclosed_mass = np.cumsum(data["cell_mass"])
-        data["enclosed_mass"] = units.Variable("enclosed_mass", enclosed_mass, "g", data["cell_mass"].loc)
+        enclosed_mass.name = "enclosed_mass"
+        data["enclosed_mass"] = enclosed_mass
         
     # If gravitational potential is missing, calculate it using the density and radius
     # Uses the equation for the newtonian gravitational potential of a spherically symmetric mass distribution
-    # TODO: Possibly need to account for the location of the radius (centered vs outer)
     if "grav_potential" not in data:
-        inner_term = np.concatenate(([0.0], np.cumsum(data["density"].value * data["radius"].value ** 3)[:-1]))
-        inner_term /= 3 * data["radius"].value
-        outer_term = np.cumsum((data["density"].value * data["radius"].value ** 2)[::-1])[::-1] / 2
-        grav_potential = -4 * np.pi * u.G * (inner_term + outer_term)
-        data["grav_potential"] = units.Variable("grav_potential", grav_potential, "erg/g", data["radius"].loc)
+        inner_term = np.concatenate(([0.0], np.cumsum(data["density"] * data["radius"] ** 3)[:-1]))
+        inner_term /= 3 * data["radius"]
+        outer_term = np.cumsum((data["density"] * data["radius"] ** 2)[::-1])[::-1] / 2
+        grav_potential = -4 * np.pi * const.G * (inner_term + outer_term)
+        grav_potential.name = "grav_potential"
+        grav_potential.loc = data["radius"].loc
+        data["grav_potential"] = grav_potential
     
     # If total specific energy is missing, calculate it using and EOS and existing data
     if "total_specific_energy" not in data:
@@ -548,4 +560,6 @@ def calculate_total_specific_energy(data):
 
     # Calculate the total specific energy and return it as a Variable
     ener = 0.5 * data["radial_velocity"] ** 2 + (energy - energy0) + data["grav_potential"] - energy_shift
-    return units.Variable("total_specific_energy", ener, "erg/g", data["radial_velocity"].loc)
+    ener.name = "total_specific_energy"
+    ener.loc = data["radial_velocity"].loc
+    return ener
