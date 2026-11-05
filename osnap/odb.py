@@ -45,18 +45,23 @@ class ODB():
     be easily accessed and manipulated.
     """
     
-    def __init__(self, file_path):
+    def __init__(self, file_path, reset = False):
         """
         Creates an access point for the HDF5 file where data is stored.
 
         Args:
             file_path (str): Path to the HDF5 file where data should be stored.
+            reset (bool): If True, any existing data in the file will be cleared.
         """
         
         # Sets the path to the HDF5 file where data is stored
         self.file_path = file_path
         if not(self.file_path.endswith(".odb")):
             self.file_path += ".odb"
+        
+        # If desired, delete the old version of the file and start over
+        if reset and os.path.exists(self.file_path):
+            os.remove(self.file_path)
         
     
     def list_groups(self):
