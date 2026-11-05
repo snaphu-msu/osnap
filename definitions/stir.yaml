@@ -79,6 +79,7 @@ column_info:
   turbulent_energy: ['etrb', 'erg/g', 'average']
   grav_potential: ['gpot', 'erg/g', 'average']
 
+coordinate: "radius"
 specific_energy_includes: ['kinetic', 'internal']
 
 # TODO:

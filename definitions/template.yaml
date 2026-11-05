@@ -124,6 +124,9 @@ column_info:
   turbulent_energy: []
   grav_potential: []
 
+# What coordinate is used for the radial profiles? Options: 'enclosed_mass', 'radius'
+coordinate: "radius"
+
 # What types of energy are included in the specific energy column?
 # Options include: 'kinetic', 'internal', 'turbulent', 'gravitational'
 # TODO: Implement code to add missing energy as needed
