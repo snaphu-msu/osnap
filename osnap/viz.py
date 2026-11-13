@@ -5,10 +5,11 @@
 ###########################################################################
 
 import matplotlib.pyplot as plt
-from osnap import odb
+from osnap import odb, units
 import astropy.units as u
+import numpy as np
 
-def plot_profile(data, group_path, profile, x_axis = "enclosed_mass", save_path = None, log = False, x_units = None, y_units = None):
+def plot_profile(data, group_path, profile, x_axis = "enclosed_mass", save_path = None, log_x = False, log_y = False, x_units = None, y_units = None):
     """
     Plots a given profile from an ODB object or file
 
@@ -42,6 +43,8 @@ def plot_profile(data, group_path, profile, x_axis = "enclosed_mass", save_path 
     
     x_data = data.read(group_path, x_axis)
     y_data = data.read(group_path, profile)
+    if profile == x_axis:
+        y_data = units.Variable(y_data.name, np.diff(x_data.value, prepend=x_data.value[0]), x_data.unit, x_data.loc)
     
     # Conver the units if they are specified
     if x_units:
@@ -51,7 +54,10 @@ def plot_profile(data, group_path, profile, x_axis = "enclosed_mass", save_path 
     
     plt.plot(x_data.value, y_data.value)
     
-    if log:
+    if log_x:
+        plt.xscale('log')
+    
+    if log_y:
         plt.yscale('log')
     
     plt.title(f"{group_path}: {profile} vs {x_axis}")

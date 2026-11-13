@@ -18,7 +18,7 @@ u.add_enabled_units([
 
 desired_units = {
     "cell_mass": "g",
-    "enclosed_mass": "g",
+    "enclosed_mass": "M_sun",
     "radius": "cm",
     "radial_velocity": "cm/s",
     "cell_volume": "cm^3",
@@ -236,14 +236,14 @@ class Variable(u.Quantity):
 #     return integral / total_weight
 
 
-def correct_units(data, log_warnings = True):
+def correct_units(data, log = True):
     
     """
     Correct the units of the data to match the OSNAP data specification.
     
     Args:
         data (dict): A dictionary containing instances of Variable.
-        log_warnings (bool): If True, log warnings for any columns whose units are not handled by OSNAP.
+        log (bool): If True, logs warnings and information about unit conversions. Default is True.
     """
     
     unknown_units = []
@@ -254,7 +254,8 @@ def correct_units(data, log_warnings = True):
             current_units = data[column].unit
             target_units = u.Unit(desired_units[column])
             if current_units != target_units:
-                print(f"Converting {column} from {current_units} to {target_units}.")
+                if log:
+                    print(f"Converting {column} from {current_units} to {target_units}.")
                 try:
                     data[column] = data[column].to(target_units)
                 except:
@@ -265,7 +266,7 @@ def correct_units(data, log_warnings = True):
             unknown_units.append(column)
             
     # Let user know if there are any columns whose units are not handled by OSNAP
-    if log_warnings and unknown_units:
+    if log and unknown_units:
         print(f"Warning: No preferred units specified by OSNAP for the following columns - {unknown_units}")
     
     return data

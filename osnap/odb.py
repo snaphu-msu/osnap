@@ -9,13 +9,14 @@
 import h5py
 import numpy as np
 from osnap import units, info, config
-from os import path, listdir
+import os
 import pandas as pd
 import yaml
 from datetime import datetime, timezone
 from scipy.interpolate import RegularGridInterpolator
 import astropy.constants as const
 import astropy.units as u
+from scipy.interpolate import interp1d
 
 #########################################################################################
 ### Notes about what fields the ODB should contain:
@@ -105,6 +106,31 @@ class ODB():
                 raise KeyError(f"Key '{key}' not found in the ODB file at '{self.file_path}'.")
     
     
+    def read_metadata(self, attribute_path, attribute_name):
+        """
+        Reads metadata from a dataset or group's attributes in the HDF5 file.
+        
+        Args:
+            attribute_path (str): The path within the HDF5 file where the attribute is located.
+            attribute_name (str): The name of the attribute to read.
+        """
+        
+        with h5py.File(self.file_path, 'r') as f:
+            
+            f[attribute_path].attrs[attribute_name]
+            if attribute_path in f:
+                if attribute_name in f[attribute_path].attrs:
+                    value = f[attribute_path].attrs[attribute_name]
+                    unit = ""
+                    if f"{attribute_name}_units" in f[attribute_path].attrs:
+                        unit = f[attribute_path].attrs[f"{attribute_name}_units"]
+                    return units.Variable(attribute_name, value, unit, "N/A")
+                else:
+                    raise KeyError(f"Attribute '{attribute_name}' not found in the group '{attribute_path}' in the ODB file at '{self.file_path}'.")
+            else:
+                raise KeyError(f"'{attribute_path}' not found in the ODB file at '{self.file_path}'.")
+    
+    
     def write(self, group, variable): 
         """
         Writes data to a field in the HDF5 file.
@@ -160,7 +186,7 @@ class ODB():
             self.update_info(f, group)
             
     
-    def write_metadata(self, path = "", name = "", value = 0): 
+    def write_metadata(self, path = "", name = "", value = 0, units = ""): 
         """
         Adds or updates an attribute to the ODB file.
 
@@ -177,6 +203,8 @@ class ODB():
             
             # Write the attribute and update the OSNAP version
             location.attrs[name] = value
+            if units != "":
+                location.attrs[f"{name}_units"] = units
             self.update_info(f)
        
             
@@ -204,7 +232,10 @@ class ODB():
             progenitor_path (str): Path to the progenitor data.
         """
         
-        self.load_data("progenitor", progenitor_path, progenitor_type)
+        print(f"Loading '{progenitor_type}' progenitor data from '{progenitor_path}'")
+        data = self.load_data(progenitor_type, progenitor_path)
+        self.write_group("progenitor", list(data.values()), 
+                         attributes = {"type": progenitor_type, "file": progenitor_path})
     
     
     def load_collapse(self, collapse_type, collapse_path):
@@ -216,23 +247,136 @@ class ODB():
             collapse_path (str): Path to the collapse data.
         """
         
-        self.load_data("profiles", collapse_path, collapse_type)
+        print(f"Loading '{collapse_type}' collapse data from '{collapse_path}'")
+        data = self.load_data(collapse_type, collapse_path)
+        self.write_group("profiles", list(data.values()), 
+                         attributes = {"type": collapse_type, "file": collapse_path})
+        
+        # Determine the proto-neutron star's mass and radius and save as attributes
         self.constrain_PNS()
+        
+        # Save the radii of the shock as an attribute
+        shock_indices = np.argwhere(data['shock'] == 1).flatten()
+        shock_radii = data['radius'][shock_indices]
+        self.write_metadata("profiles", "shock_radius", shock_radii.value, data['radius'].unitstr)
+        
+    
+    # TODO: Currently assumes time_series_multi is true. Need to support single file time series data as well.
+    def generate_tracers(self, tracer_type, tracer_path, model_name, num_tracers = None):
+        """
+        Creates trajectories from the specified time-series data.
+
+        Args:
+            tracer_type (str): Type of the tracer data (e.g., 'kepler', 'stir', 'mesa').
+            tracer_path (str): Path to the time-series data file or the folder where the time-series data are located.
+            model_name (str): The start of each file containing the data for a particular point in time.
+        """
+        
+        print(f"Loading '{tracer_type}' tracer data from '{tracer_path}'")
+        definition = get_definition(tracer_type, time_series = True)
+        
+        # Ensure the collapse data has been loaded before generating tracers
+        groups = self.list_groups()
+        if "profiles" not in groups:
+            raise ValueError("Cannot generate tracers: No 'profiles' group found in the ODB file. Please load collapse data first.")
+        
+        # Get a list of every relevant tracer file in the folder
+        files = []
+        for f in os.listdir(tracer_path):
+            if not f.startswith(model_name): continue
+            if definition['time_series_suffix'] != '' and definition['time_series_suffix'] not in f:
+                continue
+            files.append(f)
+        files.sort()
+        
+        # Load the data from each tracer file into the ODB
+        timestep = {}
+        data = {}
+        for index, file in enumerate(files):
+            
+            last_file = index == len(files) - 1
+            
+            timestep = self.load_data(tracer_type, tracer_path + str(file), definition, log = last_file)
+            
+            for var in timestep:
+                value = timestep[var].value
+                
+                if var == "time":
+                    value = value[0]
+                
+                if var not in data:
+                    data[var] = [value]
+                else:
+                    data[var].append(value)
+                    
+        
+        time = units.Variable("time", np.array(data["time"]), timestep["time"].unit, "N/A")
+        enclosed_mass = timestep["enclosed_mass"]
+                    
+        # Determine the minimum tracer mass as the first mass outside the proto-neutron star at the final time
+        pns_mass = self.read_metadata("profiles", "pns_mass")
+        pns_masscut_index = np.min(np.where(enclosed_mass >= pns_mass))
+        min_mass = enclosed_mass[pns_masscut_index]
+
+        # Set the maximum tracer mass as the outer edge of the shock at the final time
+        shock_radius = self.read_metadata("profiles", "shock_radius")
+        max_mass = enclosed_mass[np.argmin(np.abs(timestep['radius'] - shock_radius[-1]))]
+        
+        # If no number of tracers is specified, use all zones between the min and max mass on the final time step
+        if num_tracers == None:
+            mass_grid = enclosed_mass[np.where(enclosed_mass >= min_mass)]
+            mass_grid = mass_grid[np.where(mass_grid <= max_mass)]
+    
+        # Tracers evenly spaced in mass, with equal mass resolution across region
+        else:
+            mass_grid = np.linspace(min_mass, max_mass, num_tracers)
+        
+        tracers = {}
+        for var in data:
+            
+            if var == "time" or var == "enclosed_mass": 
+                continue
+            
+            values = np.zeros((len(time), len(mass_grid)))
+            for t in range(len(time)):
+                interp_func = interp1d(data['enclosed_mass'][t], data[var][t])
+                values[t, :] = interp_func(mass_grid)
+                
+            data[var] = units.Variable(var, values, timestep[var].unit, timestep[var].loc)
+                
+        del data['enclosed_mass']
+        del data['time']
+                
+        self.write_group("tracers", list(data.values()), 
+                         attributes = {
+                             "type": tracer_type, 
+                             "file": tracer_path, 
+                             "model_name": model_name,
+                             "num_tracers": len(mass_grid),
+                            })
+        
+        self.write_metadata("tracers", "min_mass", min_mass.value, enclosed_mass.unitstr)
+        self.write_metadata("tracers", "max_mass", max_mass.value, enclosed_mass.unitstr)
+        self.write_metadata("tracers", "mass_resolution", 
+                            (max_mass.value - min_mass.value) / len(mass_grid), enclosed_mass.unitstr)
     
     
-    def load_data(self, odb_path, data_type, file_path):
+    def load_data(self, data_type, file_path, definition = None, log = True):
         """
         Load data from a file into this ODB instance.
         
         Args:
             data_type (str): The type of data to load (e.g., 'kepler', 'mesa', etc).
             file_path (str): The path to the file containing the data.
+            definition (dict, optional): The definition data if previously loaded.
         """
         
-        print(f"Loading '{data_type}' data from '{file_path}'")
+        if log:
+            print(f"Loading '{data_type}' data from '{file_path}'")
         
         # Get the definition settings for the specified data type
-        definition = get_definition(data_type)
+        if definition is None:
+            definition = get_definition(data_type)
         
         # Load the data using the method given in the definition file
         if definition['file_type'] == 'csv':
@@ -270,6 +414,9 @@ class ODB():
             if col in definition and definition[col] != '':
                 values = loaded_data[definition[col].lower()].to_numpy()
                 data[col] = units.Variable(col, values, comp_type, 'average')
+                
+        if 'time' in loaded_data:
+            data['time'] = units.Variable('time', loaded_data['time'], definition['time_units'], 'N/A')
         
         # Loads in values for all isotopes listed in the definition file
         for iso in definition['isotopes']:
@@ -295,14 +442,10 @@ class ODB():
                 del data[col]
             
         # Ensure all necessary data is present and in the correct format for ODB
-        data = units.correct_units(data)
         data = calculate_missing_quantities(data)
-        data = units.correct_units(data) # DEBUG: This is just to inform us if any units are changed post-derivation
+        data = units.correct_units(data, log = log)
         
-        # Writes the loaded data to the ODB filee
-        print(f"Saving loaded data to ODB in group '{odb_path}'")
-        self.write_group(odb_path, list(data.values()), 
-                         attributes = {"type": data_type, "file": file_path})
+        return data
     
     
     def constrain_PNS(self):
@@ -321,10 +464,8 @@ class ODB():
         pns_radius = radius.value[pns_masscut_index]
         
         # Writes the calculated PNS mass and radius to the ODB file as attributes
-        self.write_metadata("profiles", "pns_mass", pns_mass)
-        self.write_metadata("profiles", "pns_mass_units", enclosed_mass.unitstr)
-        self.write_metadata("profiles", "pns_radius", pns_radius)
-        self.write_metadata("profiles", "pns_radius_units", radius.unitstr)
+        self.write_metadata("profiles", "pns_mass", pns_mass, enclosed_mass.unitstr)
+        self.write_metadata("profiles", "pns_radius", pns_radius, radius.unitstr)
     
 
 def load_csv(file_path, definition):
@@ -333,6 +474,7 @@ def load_csv(file_path, definition):
     
     Args:
         file_path (str): The path to the CSV file containing the data.
+        definition (dict): A pre-loaded definition dictionary for the data type being loaded.
         
     Returns:
         pd.DataFrame: A DataFrame containing the loaded data from the CSV file.
@@ -344,7 +486,7 @@ def load_csv(file_path, definition):
     if delimiter == "whitespace":
         delimiter = r'\s{2,}'
     
-    # Load the CSV file into a pandas DataFrame
+    # Load the CSV file into a pandas DataFrame    
     wanted_cols = set(definition['all_columns'])
     csv_data = pd.read_csv(file_path, 
                            skiprows = definition['skiprows'], 
@@ -363,6 +505,7 @@ def load_hdf5(file_path, definition):
     
     Args:
         file_path (str): The path to the HDF5 file (or folder of files) containing the data.
+        definition (dict): A pre-loaded definition dictionary for the data type being loaded.
     
     Returns:
         pd.DataFrame: A DataFrame containing the loaded data from the HDF5 file.
@@ -415,22 +558,34 @@ def load_hdf5(file_path, definition):
             zone_radii = []
             for i in range(len(inner_radii)):
                 for j in range(zones_per_block):
-                    zone_radii.append(inner_radii[i] + zone_width[i] * (j + 1))
+                    zone_radii.append(inner_radii[i] + zone_width[i] * (j + 0.5))
                 
             data_dict['radius'] = np.array(zone_radii)
             definition['column_info']['radius'] = ['radius', definition['bounding_box_units'], 'outer']
             
+            # If loading time series data and it's split between multiple files, load the current scalar time as well
+            if definition['time_series_split'] and definition['time'] != "":
+                if definition['time_row'] == -1:
+                    data_dict['time'] = f[definition['time']]
+                else:
+                    data_dict['time'] = f[definition['time']][definition['time_row']]
+                    if definition['time_column'] != -1:
+                        data_dict['time'] = data_dict['time'][definition['time_column']]
+            
         # TODO: Add support for non-AMR HDF5 data
         
+    # TODO: Returning a dataframe means that even data that is scalar (like time) will be returned as a 1D array. 
+    #       This may not be ideal, but it is consistent with the CSV loading function. Might replace with dict in general.
     return pd.DataFrame(data_dict)
 
 
-def get_definition(data_type):
+def get_definition(data_type, time_series = False):
     """
     Get settings from the definition file for a data type.
     
     Args:
         data_type (str): The type of data being loaded (e.g., 'kepler', 'mesa', etc).
+        time_series (bool): Whether the data is time-series data or not. Defaults to False.
         
     Returns:
         dict: A dictionary containing the settings from the definition file, or None 
@@ -438,14 +593,14 @@ def get_definition(data_type):
     """
     
     # First, load the template as a base so that we have default values for every setting
-    template_path = path.join(path.dirname(__file__), f'../definitions/template.yaml')
-    if path.exists(template_path):
+    template_path = os.path.join(os.path.dirname(__file__), f'../definitions/template.yaml')
+    if os.path.exists(template_path):
         with open(template_path, 'r') as f:
             loaded_def = yaml.safe_load(f)
     
     # Load the definition file for the specified data type
-    def_path = path.join(path.dirname(__file__), f'../definitions/{data_type}.yaml')
-    if path.exists(def_path):
+    def_path = os.path.join(os.path.dirname(__file__), f'../definitions/{data_type}.yaml')
+    if os.path.exists(def_path):
         with open(def_path, 'r') as f:
             loaded_def.update(yaml.safe_load(f))
             
@@ -458,7 +613,9 @@ def get_definition(data_type):
             # Including lists that are not part of the column_info variable
             loaded_def['all_columns'] += list(loaded_def['isotopes']) + list(loaded_def['element_groups'])
             
-            print(loaded_def['all_columns'])
+            # If loading data containing many time steps, load the time column as well
+            if time_series and not loaded_def['time_series_split']:
+                loaded_def['all_columns'].append(loaded_def['time'])
             
             # As well as single value column names
             for col in ['node_type', 'bounding_box', 'neutrons', 'protons', 'deuterium', 'tritium']:
@@ -472,8 +629,9 @@ def get_definition(data_type):
     # If the requested definition file does not exist, 
     # raise an error and list all available data types
     else:
-        def_dir = path.join(path.dirname(__file__), '../definitions')
-        all_defs = [f.split('.')[0] for f in listdir(def_dir) if f.endswith('.yaml')]
+        def_dir = os.path.join(os.path.dirname(__file__), '../definitions')
+        all_defs = [f.split('.')[0] for f in os.listdir(def_dir) if f.endswith('.yaml')]
+        all_defs.remove('template')
         raise ValueError(f"Definition file for data type '{data_type}' not found. "
                          + f"Please use one of the following types: {all_defs}")
 

@@ -15,6 +15,27 @@ split_files: false
 # Are zones ordered in ascending mass/radius or descending?
 zone_order: 'ascending'
 
+
+###############################################################################
+### TIME SERIES SETTINGS
+###    Settings used when loading time series data.
+###############################################################################
+
+# Whether or not the time series data is split into one file per timestep or all timesteps in a single file.
+time_series_split: true
+
+# String at the end of each file name when using multi-file time series (ex. "_hdf5_chk_" for FLASH/STIR)
+time_series_suffix: ""
+
+# The name of the dataset containing the time value(s).
+time: ""
+
+# If the timestep value is stored as one value in a dataset, what index is it located at? (ex. 2 for FLASH/STIR)
+time_index: -1
+
+# The units used for the time value(s) (in astropy.units format).
+time_units: ""
+
 ###############################################################################
 ### CSV SETTINGS
 ###    Settings related to loading the data as a CSV file.
