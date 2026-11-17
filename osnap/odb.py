@@ -8,7 +8,7 @@
 
 import h5py
 import numpy as np
-from osnap import units, info, config
+from osnap import units, info
 import os
 import pandas as pd
 import yaml
@@ -17,6 +17,7 @@ from scipy.interpolate import RegularGridInterpolator
 import astropy.constants as const
 import astropy.units as u
 from scipy.interpolate import interp1d
+from osnap.config import CONFIG
 
 #########################################################################################
 ### Notes about what fields the ODB should contain:
@@ -33,9 +34,6 @@ from scipy.interpolate import interp1d
 ### light_curves: (dataset containing any generated light curves from the star)
 ### spectra: (dataset containing any generated spectra from the star)
 #########################################################################################
-
-
-CONFIG = config.load()
 
 class ODB():
     """
@@ -63,6 +61,11 @@ class ODB():
         # If desired, delete the old version of the file and start over
         if reset and os.path.exists(self.file_path):
             os.remove(self.file_path)
+            
+        # Create the HDF5 file if it doesn't already exist
+        if not os.path.exists(self.file_path):
+            with h5py.File(self.file_path, 'w') as f:
+                self.update_info(f)
         
     
     def list_groups(self):
@@ -233,7 +236,9 @@ class ODB():
         """
         
         print(f"Loading '{progenitor_type}' progenitor data from '{progenitor_path}'")
-        data = self.load_data(progenitor_type, progenitor_path)
+        definition = get_definition(progenitor_type)
+        data = self.load_data(progenitor_type, progenitor_path, definition)
+        
         self.write_group("progenitor", list(data.values()), 
                          attributes = {"type": progenitor_type, "file": progenitor_path})
     
@@ -331,7 +336,6 @@ class ODB():
         else:
             mass_grid = np.linspace(min_mass, max_mass, num_tracers)
         
-        tracers = {}
         for var in data:
             
             if var == "time" or var == "enclosed_mass": 
@@ -343,18 +347,15 @@ class ODB():
                 values[t, :] = interp_func(mass_grid)
                 
             data[var] = units.Variable(var, values, timestep[var].unit, timestep[var].loc)
-                
-        del data['enclosed_mass']
-        del data['time']
-                
-        self.write_group("tracers", list(data.values()), 
-                         attributes = {
-                             "type": tracer_type, 
-                             "file": tracer_path, 
-                             "model_name": model_name,
-                             "num_tracers": len(mass_grid),
-                            })
         
+        data['enclosed_mass'] = units.Variable('enclosed_mass', mass_grid, enclosed_mass.unit, enclosed_mass.loc)
+        data['time'] = time
+                
+        self.write_group("tracers", list(data.values()))
+        self.write_metadata("tracers", "type", tracer_type)
+        self.write_metadata("tracers", "path", tracer_path)
+        self.write_metadata("tracers", "model", model_name)
+        self.write_metadata("tracers", "tracer_count", len(mass_grid))
         self.write_metadata("tracers", "min_mass", min_mass.value, enclosed_mass.unitstr)
         self.write_metadata("tracers", "max_mass", max_mass.value, enclosed_mass.unitstr)
         self.write_metadata("tracers", "mass_resolution", 
@@ -561,8 +562,8 @@ def load_hdf5(file_path, definition):
                     zone_radii.append(inner_radii[i] + zone_width[i] * (j + 0.5))
                 
             data_dict['radius'] = np.array(zone_radii)
-            definition['column_info']['radius'] = ['radius', definition['bounding_box_units'], 'outer']
-            
+            definition['column_info']['radius'] = ['radius', definition['bounding_box_units'], 'center']
+ 
             # If loading time series data and it's split between multiple files, load the current scalar time as well
             if definition['time_series_split'] and definition['time'] != "":
                 if definition['time_row'] == -1:
