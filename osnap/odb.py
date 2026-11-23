@@ -714,7 +714,8 @@ def calculate_total_specific_energy(data):
         
         # The EOS offsets its energy values by a constant energy_shift to ensure no values are negative.
         # So, we need to offset it back down by the same amount to get the correct total specific energy.
-        energy_shift = EOS['energy_shift'][0] * u.erg / u.g
+        # NOTE: Energy shift may not be necessary, because it is already accounted for in energy0
+        #energy_shift = EOS['energy_shift'][0] * u.erg / u.g
 
     # Use the EOS to energy values
     llogtemp = np.log10((data["temperature"] * const.k_B.to(u.MeV / u.K)).value)
@@ -723,7 +724,7 @@ def calculate_total_specific_energy(data):
     energy0 = 10.0 ** logenergy(np.array([data["Y_e"].value, llogtemp * 0.0 - 2.0, llogrho]).T) * u.erg / u.g
 
     # Calculate the total specific energy and return it as a Variable
-    ener = 0.5 * data["radial_velocity"] ** 2 + (energy - energy0) + data["grav_potential"] - energy_shift
+    ener = 0.5 * data["radial_velocity"] ** 2 + (energy - energy0) + data["grav_potential"]# - energy_shift
     ener.name = "total_specific_energy"
     ener.loc = data["radial_velocity"].loc
     return ener
