@@ -6,8 +6,6 @@
 
 import yaml
 from os import path
-
-CONFIG = {} 
     
 def load(global_config = None, project_config = None):
     """
@@ -21,20 +19,20 @@ def load(global_config = None, project_config = None):
     
     # Read default_config.yaml file from parent directory and save it as dictionary
     with open(path.join(path.dirname(__file__), '../default_config.yaml'), 'r') as f:
-        CONFIG = yaml.safe_load(f)
-        
-    print(CONFIG)
+        loaded_config = yaml.safe_load(f)
         
     # If global_config is provided, read it and update the config dictionary
     if global_config is not None:
         with open(global_config, 'r') as f:
             global_config_dict = yaml.safe_load(f)
-            CONFIG.update(global_config_dict)
+            loaded_config.update(global_config_dict)
             
     # If project_config is provided, read it and update the config dictionary
     if project_config is not None:
         with open(project_config, 'r') as f:
             project_config_dict = yaml.safe_load(f)
-            CONFIG.update(project_config_dict)
+            loaded_config.update(project_config_dict)
             
-    return CONFIG
+    return loaded_config
+
+CONFIG = load()
