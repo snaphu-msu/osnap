@@ -68,3 +68,62 @@ def plot_profile(data, group_path, profile, x_axis = "enclosed_mass", save_path 
         plt.savefig(save_path)
     
     plt.show()
+    
+def plot_tracers(data, profile, zone = 0, save_path = None, log_x = False, log_y = False, y_units = None):
+    """
+    Plots a tracer over time for a given profile.
+
+    Args:
+        data (odb.ODB or str): The odb object containing the profile data, or the path to an ODB file.
+        profile (str): Name of the dataset to plot on the y-axis (ex. "density" or "temperature").
+        x_axis (str, optional): Name of the dataset to use on the x-axis. Generally "enclosed_mass", "radius", or "time". \
+            Defaults to "enclosed_mass".
+        save_path (str, optional): If provided, saves the plot to this path. Defaults to None.
+        log (bool, optional): If True, sets the y-axis to a logarithmic scale. Defaults to False.
+    """
+    
+    # If the data provided is a path, load the ODB at that path
+    if type(data) == str:
+        data = odb.ODB(data)
+    
+    # If the group doesn't exist, raise an error
+    groups = data.list_groups()
+    if "tracers" not in groups:
+        raise ValueError(f"Group 'tracers' not found in ODB. Available groups: {groups}")
+    
+    # If either dataset doesn't exist, raise an error
+    datasets = data.list_datasets('tracers')
+    if "time" not in datasets:
+        raise ValueError(f"X-axis dataset 'time' not found in group 'tracers'. Available datasets: {datasets}")
+    if profile not in datasets:
+        raise ValueError(f"Y-axis dataset '{profile}' not found in group 'tracers'. Available datasets: {datasets}")
+    
+    plt.figure(figsize=(10, 6))
+    
+    x_data = data.read("tracers", "time")
+    y_data = data.read("tracers", profile)
+    enclosed_mass = data.read("tracers", "enclosed_mass")
+    
+    # Conver the units if they are specified
+    if y_units:
+        y_data = y_data.to(u.Unit(y_units))
+    
+    plt.plot(x_data.value, y_data.value[:, zone])
+    
+    if log_x:
+        plt.xscale('log')
+    
+    if log_y:
+        plt.yscale('log')
+    
+    plt.title(f"tracers: {profile} vs time ({enclosed_mass.value[zone]:.4f} {enclosed_mass.unit.to_string()})")
+    plt.xlabel("time" + f" ({x_data.unit.to_string()})")
+    if y_data.unit.to_string() == "":
+        plt.ylabel(profile)
+    else:
+        plt.ylabel(profile + f" ({y_data.unit.to_string()})")
+    
+    if save_path:
+        plt.savefig(save_path)
+    
+    plt.show()
