@@ -651,7 +651,7 @@ def calculate_missing_quantities(data):
     # Tries to calculate the cell volume if it's missing
     if "cell_volume" not in data:
         if "radius" in data:
-            volume = (4/3) * np.pi * data["radius"] ** 3
+            volume = (4/3) * np.pi * data["radius"].shifted("outer") ** 3
             volume.value[1:] = np.diff(volume.value)
             data["cell_volume"] = volume
             data["cell_volume"].name = "cell_volume"
@@ -716,7 +716,7 @@ def calculate_total_specific_energy(data):
         # So, we need to offset it back down by the same amount to get the correct total specific energy.
         energy_shift = EOS['energy_shift'][0] * u.erg / u.g
 
-    # Use the EOS to calculate the total specific energy
+    # Use the EOS to energy values
     llogtemp = np.log10((data["temperature"] * const.k_B.to(u.MeV / u.K)).value)
     llogrho = np.log10(data["density"].value)
     energy = 10.0 ** logenergy(np.array([data["Y_e"].value, llogtemp, llogrho]).T) * u.erg / u.g
