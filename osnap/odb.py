@@ -109,6 +109,31 @@ class ODB():
                 raise KeyError(f"Key '{key}' not found in the ODB file at '{self.file_path}'.")
     
     
+    def read_group(self, group):
+        """
+        Reads all data from a group in the HDF5 file.
+
+        Args:
+            group (str): The group in the HDF5 file where the dataset is located.
+            
+        Returns:
+            dict: A dictionary containing all the datasets (as units.Variable) in the specified group.
+        """
+        
+        with h5py.File(self.file_path, 'r') as f:
+            
+            group_data = {}
+            if group in f:
+                for key in f[group].keys():
+                    dataset = f[group + '/' + key]
+                    group_data[key] = units.Variable(key, dataset[:], dataset.attrs.get("units", ""), 
+                                                     dataset.attrs.get("location", "average"))
+                return group_data
+            
+            else:
+                raise KeyError(f"Group '{group}' not found in the ODB file at '{self.file_path}'.")
+    
+    
     def read_metadata(self, group_path, attribute_name):
         """
         Reads metadata from a dataset or group's attributes in the HDF5 file.
