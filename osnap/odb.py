@@ -109,29 +109,28 @@ class ODB():
                 raise KeyError(f"Key '{key}' not found in the ODB file at '{self.file_path}'.")
     
     
-    def read_metadata(self, attribute_path, attribute_name):
+    def read_metadata(self, group_path, attribute_name):
         """
         Reads metadata from a dataset or group's attributes in the HDF5 file.
         
         Args:
-            attribute_path (str): The path within the HDF5 file where the attribute is located.
+            group_path (str): The path within the HDF5 file where the attribute is located.
             attribute_name (str): The name of the attribute to read.
         """
         
         with h5py.File(self.file_path, 'r') as f:
             
-            f[attribute_path].attrs[attribute_name]
-            if attribute_path in f:
-                if attribute_name in f[attribute_path].attrs:
-                    value = f[attribute_path].attrs[attribute_name]
+            if group_path in f:
+                if attribute_name in f[group_path].attrs:
+                    value = f[group_path].attrs[attribute_name]
                     unit = ""
-                    if f"{attribute_name}_units" in f[attribute_path].attrs:
-                        unit = f[attribute_path].attrs[f"{attribute_name}_units"]
+                    if f"{attribute_name}_units" in f[group_path].attrs:
+                        unit = f[group_path].attrs[f"{attribute_name}_units"]
                     return units.Variable(attribute_name, value, unit, "N/A")
                 else:
-                    raise KeyError(f"Attribute '{attribute_name}' not found in the group '{attribute_path}' in the ODB file at '{self.file_path}'.")
+                    raise KeyError(f"Attribute '{attribute_name}' not found in the group '{group_path}' in the ODB file at '{self.file_path}'.")
             else:
-                raise KeyError(f"'{attribute_path}' not found in the ODB file at '{self.file_path}'.")
+                raise KeyError(f"'{group_path}' not found in the ODB file at '{self.file_path}'.")
     
     
     def write(self, group, variable): 
@@ -237,10 +236,16 @@ class ODB():
         
         print(f"Loading '{progenitor_type}' progenitor data from '{progenitor_path}'")
         definition = get_definition(progenitor_type)
-        data = self.load_data(progenitor_type, progenitor_path, definition)
+        data, elements = self.load_data(progenitor_type, progenitor_path, definition)
         
+        # Save the loaded progenitor data to the ODB file under the "progenitor" group
         self.write_group("progenitor", list(data.values()), 
                          attributes = {"type": progenitor_type, "file": progenitor_path})
+        
+        # If the progenitor data had any composition data, save it under the "initial_composition" group
+        if len(elements) > 0:
+            self.write_group("initial_composition", list(elements.values()),
+                             attributes = {"type": progenitor_type, "file": progenitor_path})
     
     
     def load_collapse(self, collapse_type, collapse_path):
@@ -253,7 +258,7 @@ class ODB():
         """
         
         print(f"Loading '{collapse_type}' collapse data from '{collapse_path}'")
-        data = self.load_data(collapse_type, collapse_path)
+        data, elements = self.load_data(collapse_type, collapse_path)
         self.write_group("profiles", list(data.values()), 
                          attributes = {"type": collapse_type, "file": collapse_path})
         
@@ -301,7 +306,7 @@ class ODB():
             
             last_file = index == len(files) - 1
             
-            timestep = self.load_data(tracer_type, tracer_path + str(file), definition, log = last_file)
+            timestep, _ = self.load_data(tracer_type, tracer_path + str(file), definition, log = last_file)
             
             for var in timestep:
                 value = timestep[var].value
@@ -395,7 +400,7 @@ class ODB():
         loaded_data.columns = [col.strip("'").lower() for col in loaded_data.columns]
         
         # Create a dictionary to store the loaded data
-        data = {}
+        data, elements = {}, {}
         for col in definition['column_info']:
             
             # Try to get settings for each column, skipping ill-defined or unnamed columns
@@ -414,7 +419,7 @@ class ODB():
         for col in ['neutrons', 'protons', 'deuterium', 'tritium']:
             if col in definition and definition[col] != '':
                 values = loaded_data[definition[col].lower()].to_numpy()
-                data[col] = units.Variable(col, values, comp_type, 'average')
+                elements[col] = units.Variable(col, values, comp_type, 'average')
                 
         if 'time' in loaded_data:
             data['time'] = units.Variable('time', loaded_data['time'], definition['time_units'], 'N/A')
@@ -424,17 +429,17 @@ class ODB():
             element = ''.join([c for c in iso if not c.isdigit()]).lower()
             mass_number = ''.join([c for c in iso if c.isdigit()])
             iso_name = f"{element}{mass_number}"
-            if iso_name not in data:
+            if iso_name not in elements:
                 values = loaded_data[iso.lower()].to_numpy()
-                data[iso_name] = units.Variable(iso_name, values, comp_type, 'average')
+                elements[iso_name] = units.Variable(iso_name, values, comp_type, 'average')
             
         # Loads in values for all elements with no mass number
         # TODO: May handle these differently later
         for element in definition['element_groups']:
             element = element.lower()
-            if element not in data:
+            if element not in elements:
                 values = loaded_data[element].to_numpy()
-                data[element] = units.Variable(element, values, comp_type, 'average')
+                elements[element] = units.Variable(element, values, comp_type, 'average')
                 
         # Clean the data by removing any columns with all NaN values
         for col in list(data):
@@ -446,7 +451,7 @@ class ODB():
         data = calculate_missing_quantities(data)
         data = units.correct_units(data, log = log)
         
-        return data
+        return data, elements
     
     
     def constrain_PNS(self):
